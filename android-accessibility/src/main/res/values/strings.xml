@@ -1,0 +1,3 @@
+<resources>
+    <string name="rancher_accessibility_description">Allows Rancher to inspect visible Android UI and execute user-selected semantic accessibility actions.</string>
+</resources>
