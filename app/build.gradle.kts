@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "dev.rancher.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "dev.rancher.app"

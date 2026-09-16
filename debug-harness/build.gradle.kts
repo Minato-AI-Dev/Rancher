@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "dev.rancher.debug.harness"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 26
