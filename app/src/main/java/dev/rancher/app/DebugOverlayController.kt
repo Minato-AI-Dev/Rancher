@@ -38,7 +38,10 @@ object DebugOverlayController {
     private var collector: Job? = null
     private var status: ToolResult? = null
 
+    private const val TAG = "RancherOverlay"
+
     fun show(service: AccessibilityService) {
+        android.util.Log.i(TAG, "DebugOverlayController.show() called, rootView=$rootView")
         if (rootView != null) return
 
         val wm = service.getSystemService(WindowManager::class.java)
@@ -64,7 +67,12 @@ object DebugOverlayController {
         windowManager = wm
         rootView = panel
         scope = overlayScope
-        wm.addView(panel, params)
+        try {
+            wm.addView(panel, params)
+            android.util.Log.i(TAG, "DebugOverlayController panel added to WindowManager")
+        } catch (t: Throwable) {
+            android.util.Log.e(TAG, "Failed to add overlay view", t)
+        }
 
         render(service, panel, UiSnapshotEngine.currentSnapshot.value)
         collector = overlayScope.launch {

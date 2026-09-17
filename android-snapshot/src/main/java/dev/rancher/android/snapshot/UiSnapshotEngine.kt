@@ -36,10 +36,15 @@ object UiSnapshotEngine {
         }
     }
 
+    // 【安全性・誤操作防止: 古い画面情報（Stale Snapshot）の検出と解決】
+    // 指定された snapshotId が最新の画面と一致しない場合、または画面上の要素（フィンガープリント）が
+    // キャプチャ時と異なっている場合は「画面がすでに変化した（Stale）」と判定して安全に中断します。
+    // これにより、画面が切り替わった後に古い要素を誤タップしてしまう事故を防止します。
     fun resolve(snapshotId: String, nodeId: Int): NodeResolution {
         val snapshot: UiSnapshot
         val handle: NodeHandle
         synchronized(lock) {
+            // スナップショットIDが最新でない場合は操作を拒絶
             snapshot = _currentSnapshot.value ?: return NodeResolution.StaleSnapshot
             if (snapshot.id != snapshotId) return NodeResolution.StaleSnapshot
             handle = currentHandles[nodeId] ?: return NodeResolution.NotFound
@@ -57,6 +62,7 @@ object UiSnapshotEngine {
                 current = next
             }
 
+            // 実際の画面要素の特徴（ID・テキスト・表示位置など）がキャプチャ時と一致しない場合も誤操作防止のため拒絶
             if (!matchesFingerprint(current, handle.fingerprint)) {
                 current.recycleSafely()
                 return NodeResolution.StaleSnapshot
@@ -210,13 +216,28 @@ object UiSnapshotEngine {
         return snapshot
     }
 
+    fun setCurrentSnapshotForTesting(snapshot: UiSnapshot?) {
+        synchronized(lock) {
+            _currentSnapshot.value = snapshot
+        }
+    }
+
+    // 【安全性・機密保護: パスワードマスキング（Password Redaction）】
+    // パスワード入力欄などの機密項目（isPassword == true）では、入力文字や説明文を生データのまま保持せず、
+    // 必ず "[REDACTED]" に置き換えます。ログ、画面モデル、AIへの送信データにパスワード平文が混入・漏洩することを防ぎます。
+    internal fun sanitizeText(isPassword: Boolean, rawText: CharSequence?): String? =
+        if (isPassword) REDACTED else rawText?.toString()?.normalizeLabel()
+
+    internal fun sanitizeContentDescription(isPassword: Boolean, rawDesc: CharSequence?): String? =
+        if (isPassword) REDACTED else rawDesc?.toString()?.normalizeLabel()
+
     private fun safeText(node: AccessibilityNodeInfo): String? =
-        if (node.isPassword) REDACTED else node.text?.toString()?.normalizeLabel()
+        sanitizeText(node.isPassword, node.text)
 
     private fun safeContentDescription(node: AccessibilityNodeInfo): String? =
-        if (node.isPassword) REDACTED else node.contentDescription?.toString()?.normalizeLabel()
+        sanitizeContentDescription(node.isPassword, node.contentDescription)
 
-    private fun String.normalizeLabel(): String? =
+    internal fun String.normalizeLabel(): String? =
         trim().replace(Regex("\\s+"), " ").takeIf { it.isNotBlank() }?.take(500)
 
     private fun RawNode.isSemanticallyUseful(): Boolean =
