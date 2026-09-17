@@ -210,13 +210,25 @@ object UiSnapshotEngine {
         return snapshot
     }
 
+    fun setCurrentSnapshotForTesting(snapshot: UiSnapshot?) {
+        synchronized(lock) {
+            _currentSnapshot.value = snapshot
+        }
+    }
+
+    internal fun sanitizeText(isPassword: Boolean, rawText: CharSequence?): String? =
+        if (isPassword) REDACTED else rawText?.toString()?.normalizeLabel()
+
+    internal fun sanitizeContentDescription(isPassword: Boolean, rawDesc: CharSequence?): String? =
+        if (isPassword) REDACTED else rawDesc?.toString()?.normalizeLabel()
+
     private fun safeText(node: AccessibilityNodeInfo): String? =
-        if (node.isPassword) REDACTED else node.text?.toString()?.normalizeLabel()
+        sanitizeText(node.isPassword, node.text)
 
     private fun safeContentDescription(node: AccessibilityNodeInfo): String? =
-        if (node.isPassword) REDACTED else node.contentDescription?.toString()?.normalizeLabel()
+        sanitizeContentDescription(node.isPassword, node.contentDescription)
 
-    private fun String.normalizeLabel(): String? =
+    internal fun String.normalizeLabel(): String? =
         trim().replace(Regex("\\s+"), " ").takeIf { it.isNotBlank() }?.take(500)
 
     private fun RawNode.isSemanticallyUseful(): Boolean =

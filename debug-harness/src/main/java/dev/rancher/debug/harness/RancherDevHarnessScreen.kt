@@ -22,6 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,7 +33,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.rancher.android.accessibility.AccessibilityBridge
 import dev.rancher.android.actions.AndroidActionExecutor
 import dev.rancher.android.snapshot.UiSnapshotEngine
@@ -47,9 +47,9 @@ fun RancherDevHarnessScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val service by AccessibilityBridge.service.collectAsStateWithLifecycle()
-    val activePackage by AccessibilityBridge.activePackage.collectAsStateWithLifecycle()
-    val snapshot by UiSnapshotEngine.currentSnapshot.collectAsStateWithLifecycle()
+    val service by AccessibilityBridge.service.collectAsState()
+    val activePackage by AccessibilityBridge.activePackage.collectAsState()
+    val snapshot by UiSnapshotEngine.currentSnapshot.collectAsState()
     var lastResult by remember { mutableStateOf<ToolResult?>(null) }
 
     LaunchedEffect(service) {
