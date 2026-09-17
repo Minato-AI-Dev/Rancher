@@ -18,11 +18,17 @@ object AndroidActionExecutor {
     private const val UI_CHANGE_TIMEOUT_MS = 1_800L
     private const val UI_SETTLE_DELAY_MS = 140L
 
+    // 【安全性・誤操作防止: 古い画面情報（Stale Snapshot）に対する操作の即時遮断】
+    // 操作対象として指定された snapshotId が最新画面（currentSnapshot）と異なる場合や、
+    // 画面遷移によって対象ノードが現在の画面と一致しない場合は、
+    // 古い画面情報に基づいて意図しない別のボタンを押してしまう危険を防ぐため、
+    // 操作を実行せずに STALE_SNAPSHOT エラーで安全に終了します。
     suspend fun click(snapshotId: String, nodeId: Int): ToolResult {
         val startedAt = System.currentTimeMillis()
         val previousSnapshot = UiSnapshotEngine.currentSnapshot.value
         val previousSnapshotId = previousSnapshot?.id
 
+        // 指定されたスナップショットIDが最新でない場合は直ちに拒絶
         if (previousSnapshotId != snapshotId) {
             return result(
                 status = ToolStatus.STALE_SNAPSHOT,
@@ -43,6 +49,7 @@ object AndroidActionExecutor {
 
         val resolution = UiSnapshotEngine.resolve(snapshotId, nodeId)
         val node = when (resolution) {
+            // 画面上の要素が変化・不一致の場合は古い画面情報として拒絶
             NodeResolution.StaleSnapshot -> return result(
                 status = ToolStatus.STALE_SNAPSHOT,
                 message = "The current Android UI no longer matches the selected snapshot node.",
@@ -81,6 +88,12 @@ object AndroidActionExecutor {
 
         Log.i(TAG, "CLICK snapshot=$snapshotId node=$nodeId label=$label")
 
+        // 【安全性・信頼性確保: 操作後の新しい画面状態の再取得（Fresh Observation）】
+        // 「1つの操作を行ったら必ず新しい画面を再観測する（One action -> one fresh observation）」原則に従います。
+        // クリック実行後に対象アプリのUI変化イベント（画面遷移や内容変更）を待機し、
+        // 画面が落ち着いた段階で最新のスナップショット（UiSnapshot）を新しく生成します。
+        // これにより、古い画面認識を引きずったまま次の操作を行ってしまう連鎖的な誤操作を防止します。
+        //
         // Ignore events from Rancher's debug overlay and wait for evidence that the target app
         // changed. If Android does not emit a matching event, we still perform an explicit refresh.
         val targetPackage = previousSnapshot.packageName

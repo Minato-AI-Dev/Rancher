@@ -30,7 +30,7 @@ This repository intentionally does **not** contain an LLM, chat, scheduling, lon
 - Android SDK API 37 and Build Tools 36.x (AGP 9.4 supports API 37).
 - Gradle 9.6.
 
-> The source bundle does not include the binary `gradle-wrapper.jar`. If your checkout does not already have it, let Android Studio generate the wrapper once (or run `gradle wrapper --gradle-version 9.6.0` from a machine with Gradle installed).
+> `gradle/wrapper/gradle-wrapper.jar` is included in this repository, so you can typically run `./gradlew` directly (or `.\gradlew.bat` on Windows) without generating the wrapper manually.
 
 ## Run the M0 demo
 
