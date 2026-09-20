@@ -11,6 +11,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import dev.rancher.android.accessibility.AccessibilityBridge
 import dev.rancher.android.actions.AndroidActionExecutor
 import dev.rancher.android.snapshot.UiSnapshotEngine
 import dev.rancher.core.model.ToolResult
@@ -78,6 +79,17 @@ object DebugOverlayController {
         collector = overlayScope.launch {
             UiSnapshotEngine.currentSnapshot.collectLatest { snapshot ->
                 render(service, panel, snapshot)
+            }
+        }
+
+        // 【安全性・安定化処理: overlayのライフサイクル同期】
+        // MIUI等では省電力管理によりAccessibilityServiceが数十秒おきに再起動されることがあります。
+        // サービスが破棄されるとこのoverlay windowもシステム側で暗黙的に失われるため、
+        // サービスの消失を検知した時点でこのシングルトンの状態を確実にリセットします（rootViewを
+        // nullに戻さないと、次にshow()を呼んでも「既に表示中」と誤認して何も表示されなくなるため）。
+        overlayScope.launch {
+            AccessibilityBridge.service.collectLatest { current ->
+                if (current == null) hide()
             }
         }
 
