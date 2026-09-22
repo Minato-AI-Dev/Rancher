@@ -1,0 +1,7 @@
+<resources>
+    <string name="overlay_title">Rancher M0 Overlay</string>
+    <string name="button_refresh">Refresh</string>
+    <string name="button_close">Close</string>
+    <string name="text_tap_refresh">Tap Refresh while Android Settings is visible.</string>
+    <string name="button_click_node">CLICK #%1$d</string>
+</resources>

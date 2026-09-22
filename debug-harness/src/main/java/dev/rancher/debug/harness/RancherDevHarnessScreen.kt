@@ -30,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -67,7 +68,7 @@ fun RancherDevHarnessScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                text = "Rancher Dev Harness",
+                text = stringResource(R.string.dev_harness_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
@@ -92,21 +93,21 @@ fun RancherDevHarnessScreen(
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { openAccessibilitySettings(context) }) {
-                    Text("Accessibility Settings")
+                    Text(stringResource(R.string.button_accessibility_settings))
                 }
                 Button(
                     enabled = service != null,
                     onClick = onStartSettingsOverlayDemo,
                 ) {
-                    Text("M0 Settings demo")
+                    Text(stringResource(R.string.button_settings_demo))
                 }
                 OutlinedButton(onClick = onStopOverlay) {
-                    Text("Hide overlay")
+                    Text(stringResource(R.string.button_hide_overlay))
                 }
             }
 
             Text(
-                text = "For the real Settings demo, use “M0 Settings demo”. It keeps Settings active and shows a developer accessibility overlay with Refresh/CLICK controls.",
+                text = stringResource(R.string.description_settings_demo),
                 style = MaterialTheme.typography.bodySmall,
             )
 
@@ -119,7 +120,7 @@ fun RancherDevHarnessScreen(
                     }
                 },
             ) {
-                Text("Refresh current window")
+                Text(stringResource(R.string.button_refresh_window))
             }
 
             lastResult?.let { result ->
@@ -138,7 +139,7 @@ fun RancherDevHarnessScreen(
             HorizontalDivider()
 
             if (snapshot == null) {
-                Text("No semantic snapshot yet. Enable the service, then run the M0 Settings demo.")
+                Text(stringResource(R.string.text_no_snapshot))
             } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
@@ -198,7 +199,7 @@ private fun NodeCard(
                         }
                     },
                 ) {
-                    Text(if (busy) "CLICKING…" else "CLICK")
+                    Text(stringResource(if (busy) R.string.button_clicking else R.string.button_click))
                 }
             }
         }

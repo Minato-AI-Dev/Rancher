@@ -102,7 +102,7 @@ object DebugOverlayController {
     private fun render(service: AccessibilityService, panel: LinearLayout, snapshot: UiSnapshot?) {
         panel.removeAllViews()
 
-        panel.addView(text(service, "Rancher M0 Overlay", 17f, bold = true))
+        panel.addView(text(service, service.getString(R.string.overlay_title), 17f, bold = true))
         panel.addView(
             text(
                 service,
@@ -115,13 +115,13 @@ object DebugOverlayController {
             orientation = LinearLayout.HORIZONTAL
         }
         controls.addView(Button(service).apply {
-            text = "Refresh"
+            text = service.getString(R.string.button_refresh)
             setOnClickListener {
                 scope?.launch { UiSnapshotEngine.capture() }
             }
         })
         controls.addView(Button(service).apply {
-            text = "Close"
+            text = service.getString(R.string.button_close)
             setOnClickListener { hide() }
         })
         panel.addView(controls)
@@ -137,7 +137,7 @@ object DebugOverlayController {
         }
 
         if (snapshot == null) {
-            panel.addView(text(service, "Tap Refresh while Android Settings is visible.", 13f))
+            panel.addView(text(service, service.getString(R.string.text_tap_refresh), 13f))
             return
         }
 
@@ -190,7 +190,7 @@ object DebugOverlayController {
 
             if (node.clickable) {
                 addView(Button(service).apply {
-                    text = "CLICK #${node.id}"
+                    text = service.getString(R.string.button_click_node, node.id)
                     isEnabled = node.enabled
                     setOnClickListener {
                         isEnabled = false

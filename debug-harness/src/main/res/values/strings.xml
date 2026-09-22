@@ -1,0 +1,11 @@
+<resources>
+    <string name="dev_harness_title">Rancher Dev Harness</string>
+    <string name="button_accessibility_settings">Accessibility Settings</string>
+    <string name="button_settings_demo">M0 Settings demo</string>
+    <string name="button_hide_overlay">Hide overlay</string>
+    <string name="description_settings_demo">For the real Settings demo, use “M0 Settings demo”. It keeps Settings active and shows a developer accessibility overlay with Refresh/CLICK controls.</string>
+    <string name="button_refresh_window">Refresh current window</string>
+    <string name="text_no_snapshot">No semantic snapshot yet. Enable the service, then run the M0 Settings demo.</string>
+    <string name="button_click">CLICK</string>
+    <string name="button_clicking">CLICKING…</string>
+</resources>
