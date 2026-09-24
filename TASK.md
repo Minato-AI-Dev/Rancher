@@ -1,7 +1,7 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 修正中（M0本体はPASS済み、実機で発見された自動再観測バグの修正中）
-- 現在の担当: Kimi
+- 状態: レビュー中（自動再観測バグの修正実装・単体テスト完了。Codex品質ゲートレビュー待ち）
+- 現在の担当: Kimi（実装完了）→ Codex（品質ゲートレビュー）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
 - 更新日: 2026-09-24
@@ -80,6 +80,12 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
 - 2026-09-24 Claude: ユーザーの指示で実機（MIUI/Android 16, `fux8bevkxkdidat4`）上でRancherを実際に操作し、M0の観測→クリック→再観測ループを検証。「その他の接続オプション」相当ノードをクリックし`com.android.settings`→`com.android.phone`（モバイルネットワーク設定）へ遷移させたところ、README記載の安全設計「A fresh observation is attempted after every successful click」に反し、`AndroidActionExecutor.click()`内の自動`UiSnapshotEngine.capture()`が発火した形跡がlogcatに一切残らないまま約14秒間UIが更新されず、手動で「更新」ボタンを押して初めて`captured snap_000005`のログが出た。コード調査の結果、`UiSnapshotEngine.capture()`（UiSnapshotEngine.kt:30-37）は`AccessibilityBridge.currentRoot()`（=`rootInActiveWindow`）が`null`の場合、ログを一切出さず黙って`null`を返す設計になっており、`AndroidActionExecutor.click()`側もその`null`を1回きりの試行として扱い、リトライしない（AndroidActionExecutor.kt:111-120）。実機ログでは、クリック後の遷移がRancher自身のタスク（`baseActivity=dev.rancher.app/.MainActivity`）に埋め込まれる非標準的なウィンドウ構成になっており、遷移直後に`rootInActiveWindow`が一時的に取得できなかった可能性が高いと判断。これは「1操作→1回の必ず成功する再観測」という中核の安全設計が実機で静かに破られるケースであり、アーキテクチャ不変条件（`One UI-changing action -> one fresh observation`）自体は変えず、**capture()が一時的にnullを返した場合の短いリトライ**と、**再観測に失敗した場合はオーバーレイ上で明示的にユーザーへ知らせる**の2点で対応する方針とする。Claudeはコードを編集せず、Kimiへ実装を委譲する。
 
 ## 作業履歴
+- 2026-09-24 Kimi（追加タスク対応）:
+  1. `TASK.md` の目的・アーキテクチャ不変条件・追加タスク（2026-09-24）・設計判断（2026-09-24 Claudeエントリ）を読み込み着手。
+  2. TDD Red: `UiSnapshotEngineTest.kt` に `testRetry_returnsValueAfterTransientNulls` / `testRetry_returnsNullAfterAllAttemptsFail` を追加。`UiSnapshotEngine.retry(...)` が未実装のため `.&gradlew.bat :android-snapshot:testDebugUnitTest` が `Unresolved reference 'retry'` で失敗（Redを確認）。
+  3. TDD Green: `UiSnapshotEngine.kt` に短いリトライ（3回、100ms間隔）を実装。`capture()` は `AccessibilityBridge.currentRoot()` が一時的に null でも諦めずリトライし、最終的にnullの場合は `Log.w(TAG, "capture() failed: rootInActiveWindow remained null after retry")` を出力。リトライロジックはテストから検証できるよう `internal suspend fun <T> retry(...)` として分離。
+  4. `DebugOverlayController.kt` を確認。`AndroidActionExecutor.click()` の結果（ToolResult）が `status` 変数に保持され、`render()` 内で `${result.status}: ${result.message}` としてオーバーレイ上に表示されることを確認。`click()` 失敗時も `status` が更新され手動 `render()` が呼ばれるため、ユーザーへ結果が表示される。既存ロジックを壊さず修正不要と判断。
+  5. `.&gradlew.bat :android-actions:testDebugUnitTest :android-snapshot:testDebugUnitTest` を実行。android-snapshot 6件（新規2件含む）、android-actions 2件、すべて PASS。`.&gradlew.bat assembleDebug` も BUILD SUCCESSFUL（APK生成まで確認）。
 - 2026-09-16 Claude: リポジトリclone、環境調査（JDK/Android SDK/AVD/adb/emulator確認）、TASK.md作成、Kimiへタスク委譲
 - 2026-09-16 Kimi(1回目): gradle-wrapper.jar生成、build.gradle.kts x7修正まで進行 → システムメモリ不足でプロセス強制終了（タスク失敗）
 - 2026-09-17 Kimi(2回目): 上記を引き継ぎ再開。Emulator(Pixel_8a)起動、`dev.rancher.app` install、RancherAccessibilityServiceの有効化まで到達（Claudeがadbで直接確認: `settings get secure enabled_accessibility_services` にサービス名あり、logcatに`RancherAccessibility: event=TYPE_WINDOW_CONTENT_CHANGED`を継続受信）。92ターン・約33分実行後、Moonshot API側の429 (engine overloaded) でセッション終了（exit 1、2回目の失敗）。TASK.md更新・コミット・PR作成には未到達
@@ -108,6 +114,11 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
   - Android バージョン: Android 16 (API Level 36)
   - JDK: OpenJDK 21.0.10 (LTS)
   - Gradle: 9.6.0 / AGP 9.4.0 / Kotlin 2.4.20
+- 追加タスク（2026-09-24）修正後の自動再観測リトライに関するテスト:
+  - コマンド: `.\gradlew.bat :android-actions:testDebugUnitTest :android-snapshot:testDebugUnitTest`
+  - 結果: BUILD SUCCESSFUL。`UiSnapshotEngineTest` に新規追加した `testRetry_returnsValueAfterTransientNulls`（rootが一時的にnullの後に非nullになるケースで3回目のリトライで成功）と `testRetry_returnsNullAfterAllAttemptsFail`（rootが常にnullで3回リトライ後にnullを返す）が PASS。既存4件も PASS。`AndroidActionExecutorTest` の既存2件も PASS。合計8件、failures=0, errors=0。
+  - コマンド: `.\gradlew.bat assembleDebug`
+  - 結果: BUILD SUCCESSFUL（181 actionable tasks、app-debug.apk 生成まで確認）。
 - Test 1 (Application):
   - コマンド: `.\gradlew.bat assembleDebug`, `adb install -r app\build\outputs\apk\debug\app-debug.apk`, `adb shell am start -n dev.rancher.app/.MainActivity`
   - 結果: ビルド成功（53s）、インストール成功、クラッシュなしで MainActivity 起動確認。品質レビュー修正後も `assembleDebug` 成功（15s）。
@@ -131,12 +142,17 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
 
 ## 引き継ぎメモ
 - 完了事項:
-  - M0 受入条件（Test 1〜8）のすべてを実機/Emulator検証および単体テストで完了（M0 PASS）。
-  - Codex品質レビュー（QUALITY-REVIEW.md CHANGES REQUIRED）の指摘1・3・5に対応完了:
-    - 指摘1: `README.md` の `gradle-wrapper.jar` 同梱記載へ修正。
-    - 指摘3: `RancherAccessibilityService.kt`, `UiSnapshotEngine.kt`, `AndroidActionExecutor.kt` の重要処理（stale snapshot保護、password redaction、fresh observation、serviceInfo再設定）に非エンジニア向け日本語コメントを追加。
-    - 指摘5: `.memory/index.md` および `knowledge/` 配下に環境情報・wrapper経緯・Java21統一・Kimiクラッシュ経緯と対処・M0安全設計を永続化。
-  - 指摘2（Redフェーズ）・指摘4（SDKアクセス）・指摘6（PRアクセス）はClaude設計判断（2026-09-17）により例外承認または独立検証済み。
-  - 単体テスト全6件（failures=0, errors=0）および `assembleDebug` の正常完走を確認。
-- 次の担当者: Codex（品質ゲート再判定・レビュー）
-- 次の行動: QUALITY-REVIEW.md の再確認（Gate 3-3, Gate 5-1, Gate 5-2の解消判定）および PASS 判定。承認後 PR #2 を main へマージ。
+  - 追加タスク（2026-09-24）: クリック後の自動再観測が実機で発火しない不具合を修正。
+    - `UiSnapshotEngine.capture()` に `AccessibilityBridge.currentRoot()` 取得の短いリトライ（3回・100ms間隔・合計最大200ms）を追加。クリック直後の一時的な `rootInActiveWindow == null` を吸収し、「One UI-changing action -> one fresh observation」原則を維持。
+    - リトライしても `rootInActiveWindow` が取得できない場合は `Log.w` で原因追跡可能なログを出力（従来は無言でnull）。
+    - `AndroidActionExecutor.click()` の `newSnapshot == null` 時の `FAILED`/`TIMEOUT` ToolResult は維持。設計原則・click方式・stale snapshot保護は変更なし。
+    - `DebugOverlayController.kt` を確認。`ToolResult.status`/`message` がオーバーレイ上に表示される既存ロジックを維持し、修正不要と判断。
+  - TDD Red→Green の証跡を残し、新規テスト2件を追加:
+    - `testRetry_returnsValueAfterTransientNulls`: root が最初 null で数回後に非nullになるケースでリトライ成功。
+    - `testRetry_returnsNullAfterAllAttemptsFail`: リトライしても全て null なら最終的に null を返す（既存動作を壊さない）。
+  - 単体テスト全8件（android-snapshot 6件、android-actions 2件）が failures=0, errors=0 で PASS。`.&gradlew.bat assembleDebug` も BUILD SUCCESSFUL。
+- 未対応・次工程:
+  - 実機（MIUI/Android 16）での再検証は未実施（Emulator/Pixel_8a 上の単体テスト・ビルド検証まで）。
+  - コミットは未実施（各自の判断で可）。push/PR作成はしない（ユーザー指示）。
+- 次の担当者: Codex（品質ゲートレビュー）
+- 次の行動: `QUALITY-REVIEW.md` または Gate 3/Gate 4 相当のレビューを実施し、変更ファイル（`UiSnapshotEngine.kt`, `UiSnapshotEngineTest.kt`）と TDD 証跡・テスト結果を確認の上 PASS/CHANGES REQUIRED/ESCALATE を記録。必要に応じてユーザーへ実機再検証を依頼。
