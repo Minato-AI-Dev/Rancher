@@ -1,12 +1,20 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 完了 (M0 PASS)
-- 現在の担当: Antigravity
+- 状態: 修正中（M0本体はPASS済み、実機で発見された自動再観測バグの修正中）
+- 現在の担当: Kimi
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
-- 更新日: 2026-09-17
+- 更新日: 2026-09-24
 - 優先順位: 高
 - 期限: 期限なし
+
+## 追加タスク（2026-09-24）: クリック後の自動再観測が実機で発火しない不具合の修正
+- 対象ファイル（ファイル所有権宣言。Kimiが着手中は他のAIはこれらを編集しない）:
+  - `android-snapshot/src/main/java/dev/rancher/android/snapshot/UiSnapshotEngine.kt`
+  - `android-actions/src/main/java/dev/rancher/android/actions/AndroidActionExecutor.kt`
+  - `app/src/main/java/dev/rancher/app/DebugOverlayController.kt`
+  - 上記に対応する既存/新規テスト（`android-actions/src/test`, `android-snapshot/src/test`）
+- 対象外: UIデザインの作り直し、M0の責務分離・click方式などアーキテクチャ不変条件の変更（上記「アーキテクチャ不変条件」セクション参照、変更禁止）。
 
 ## 目的
 Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSnapshotへ変換し、Debug Harnessでactionable nodeを確認し、Android Settingsの「Connected devices」をsemantic node ID経由でCLICKし、遷移後に新しいUiSnapshotを生成する一連の流れ）を、コードレビューだけでなく実際にビルド・install・起動・操作して証明する。静的解析のみでの「成功」判定は禁止。
@@ -69,6 +77,7 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
 ## 設計判断
 - 2026-09-16 Claude: このタスクはAGENTS.mdの「通常の実装・バグ修正・テスト」に該当するためKimiへ実装・検証実行を委譲する。アーキテクチャ（責務分離・UiNode/UiSnapshotモデル・stale snapshot保護・click方式）は既にユーザー仕様で確定しており、Claudeによる追加の設計判断は不要と判断。Kimiが2回失敗した箇所が出た場合のみClaudeにエスカレーションする。
 - 2026-09-17 Claude: Codexの品質ゲート判定（QUALITY-REVIEW.md）指摘2（Gate 3-1: TDD Redフェーズ証跡なし）について、本タスクは新機能開発ではなく既存実装のM0受入検証＋リグレッションテスト追加であるため、Red→Green手順の追加記録は不要と判断し例外承認する。指摘1（README/wrapper.jar不整合）・指摘3（重要処理の日本語説明不足）・指摘5（.memory/index.md未更新）はAntigravityへ差し戻し修正を依頼する。指摘4・6（Codexサンドボックスがandroid SDK/GitHub PRへアクセス不能）はCodex環境側の制約であり、Claudeが本セッション内で`./gradlew.bat assembleDebug`・両モジュールのunit test再実行、および`gh pr view`によるPR本文取得で独立に検証済みのため、実質的な欠陥ではないと判断。
+- 2026-09-24 Claude: ユーザーの指示で実機（MIUI/Android 16, `fux8bevkxkdidat4`）上でRancherを実際に操作し、M0の観測→クリック→再観測ループを検証。「その他の接続オプション」相当ノードをクリックし`com.android.settings`→`com.android.phone`（モバイルネットワーク設定）へ遷移させたところ、README記載の安全設計「A fresh observation is attempted after every successful click」に反し、`AndroidActionExecutor.click()`内の自動`UiSnapshotEngine.capture()`が発火した形跡がlogcatに一切残らないまま約14秒間UIが更新されず、手動で「更新」ボタンを押して初めて`captured snap_000005`のログが出た。コード調査の結果、`UiSnapshotEngine.capture()`（UiSnapshotEngine.kt:30-37）は`AccessibilityBridge.currentRoot()`（=`rootInActiveWindow`）が`null`の場合、ログを一切出さず黙って`null`を返す設計になっており、`AndroidActionExecutor.click()`側もその`null`を1回きりの試行として扱い、リトライしない（AndroidActionExecutor.kt:111-120）。実機ログでは、クリック後の遷移がRancher自身のタスク（`baseActivity=dev.rancher.app/.MainActivity`）に埋め込まれる非標準的なウィンドウ構成になっており、遷移直後に`rootInActiveWindow`が一時的に取得できなかった可能性が高いと判断。これは「1操作→1回の必ず成功する再観測」という中核の安全設計が実機で静かに破られるケースであり、アーキテクチャ不変条件（`One UI-changing action -> one fresh observation`）自体は変えず、**capture()が一時的にnullを返した場合の短いリトライ**と、**再観測に失敗した場合はオーバーレイ上で明示的にユーザーへ知らせる**の2点で対応する方針とする。Claudeはコードを編集せず、Kimiへ実装を委譲する。
 
 ## 作業履歴
 - 2026-09-16 Claude: リポジトリclone、環境調査（JDK/Android SDK/AVD/adb/emulator確認）、TASK.md作成、Kimiへタスク委譲
