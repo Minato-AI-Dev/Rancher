@@ -20,6 +20,7 @@ This repository intentionally does **not** contain an LLM, chat, scheduling, lon
 - `android-accessibility` — Android `AccessibilityService` and service/event bridge.
 - `android-snapshot` — accessibility-tree traversal, compression, redaction, snapshot IDs, stale-snapshot resolution.
 - `android-actions` — semantic click execution and post-action re-observation.
+- `structured-tool-api` — stable typed boundary exposing `observe()` and `click()` to future AI Agent callers.
 - `debug-harness` — developer-only Compose UI.
 - `app` also hosts a developer accessibility overlay for exercising the harness while the target app remains active.
 
@@ -56,3 +57,7 @@ This repository intentionally does **not** contain an LLM, chat, scheduling, lon
 ## M0 acceptance target
 
 The first target is Android Settings → **Connected devices**. Once that path is reliable on a real device, the next milestone can introduce the generic structured tool API. Do not add an LLM before that validation.
+
+## M1 Structured Tool API
+
+M1 introduces a stable typed internal API that exposes `observe()` and `click(snapshotId, nodeId)` to future AI Agent callers without leaking Android-specific objects. The Debug Overlay and Developer Harness are updated to call through this API. See `docs/M1_STRUCTURED_TOOL_API.md` for the full specification, layer boundary, and out-of-scope items.
