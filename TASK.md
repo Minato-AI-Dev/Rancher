@@ -1,20 +1,71 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 完了（自動再観測バグの修正。Codex品質ゲートレビュー→ESCALATE→Claude設計判断によりPASS。実機再検証はユーザー指示により省略、将来課題として記録）
-- 現在の担当: なし（完了）
+- 状態: 実装中（M1: Structured Tool API — Gate 1 PASS、Gemini分解済み、Kimiへ実装委譲）
+- 現在の担当: Kimi（実装、Wave1→Wave2順）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
-- 更新日: 2026-09-24
+- 更新日: 2026-09-27
 - 優先順位: 高
 - 期限: 期限なし
 
-## 追加タスク（2026-09-24）: クリック後の自動再観測が実機で発火しない不具合の修正
+## 追加タスク（2026-09-24）: クリック後の自動再観測が実機で発火しない不具合の修正 [完了]
 - 対象ファイル（ファイル所有権宣言。Kimiが着手中は他のAIはこれらを編集しない）:
   - `android-snapshot/src/main/java/dev/rancher/android/snapshot/UiSnapshotEngine.kt`
   - `android-actions/src/main/java/dev/rancher/android/actions/AndroidActionExecutor.kt`
   - `app/src/main/java/dev/rancher/app/DebugOverlayController.kt`
   - 上記に対応する既存/新規テスト（`android-actions/src/test`, `android-snapshot/src/test`）
 - 対象外: UIデザインの作り直し、M0の責務分離・click方式などアーキテクチャ不変条件の変更（上記「アーキテクチャ不変条件」セクション参照、変更禁止）。
+- 状態: 完了（Codex品質ゲートレビュー→ESCALATE→Claude設計判断によりPASS。実機再検証はユーザー指示により省略、将来課題として`.memory/knowledge/m0-safety-architecture.md`に記録）。コミット`fc2cfb9`まででpush済み。
+
+## 追加タスク（2026-09-27）: M1 Structured Tool API の導入
+- 背景: README.mdの「M0 acceptance target」に基づく次マイルストーン。ユーザー指示によりConnected devicesパスの実機再検証を待たずに着手する（実機検証は将来課題として保留中、`.memory/knowledge/m0-safety-architecture.md`参照）。
+- Claudeの設計判断（スコープ確定）: アーキテクチャ不変条件のレイヤー図（AI Agent（将来）→ Structured Tool API → Policy/Safety Layer（将来）→ Android Control Engine → AccessibilityService → Android Device）に従い、本タスクは **Structured Tool API 層のみ** を対象とする。既存の`UiSnapshotEngine.capture()`と`AndroidActionExecutor.click(snapshotId, nodeId)`は既にsnapshotId/nodeId経由の汎用APIとして実装済みであり、これをDebug Overlay UI（`DebugOverlayController.kt`）から独立した、安定した呼び出し契約（例: `observe()` / `click(snapshotId, nodeId)`をまとめた明示的なツールインターフェース、ツール一覧・入出力スキーマの定義）として整理・文書化することが中心。AI Agent層、Policy/Safety Layer、LLM統合、ネットワーク越しの呼び出しは引き続き対象外（M0の対象外規定を継承）。
+- 対象ファイル（ファイル所有権宣言。Kimi着手中は他のAIはこれらを編集しない）:
+  - 新規: `structured-tool-api/build.gradle.kts`, `structured-tool-api/src/main/java/dev/rancher/tool/api/StructuredToolApi.kt`, `ToolDefinition.kt`, `ObserveToolResult.kt`, `AndroidStructuredToolApi.kt`, `structured-tool-api/src/test/java/dev/rancher/tool/api/StructuredToolApiTest.kt`, `docs/M1_STRUCTURED_TOOL_API.md`
+  - 変更: `settings.gradle.kts`（`:structured-tool-api`追加）, `app/build.gradle.kts`, `app/src/main/java/dev/rancher/app/DebugOverlayController.kt`（Refresh/CLICK呼び出しをStructured Tool API経由へ切替、UI構成は変更しない）, `debug-harness/build.gradle.kts`, `debug-harness/src/main/java/dev/rancher/debug/harness/RancherDevHarnessScreen.kt`（呼び出し切替のみ、Compose UIデザイン変更なし）, `README.md`
+  - 原則として変更しない: `UiSnapshotEngine.kt`, `AndroidActionExecutor.kt`, `core-model`配下の`ToolResult.kt`/`UiSnapshot.kt`/`UiNode.kt`（Structured Tool APIからの再利用対象。公開モデル・実行意味論の変更禁止）
+
+### 目的（M1）
+既存の`UiSnapshotEngine.capture()`と`AndroidActionExecutor.click(snapshotId, nodeId)`を、Debug Overlayなど特定UI実装に依存しない型付きの安定した内部ツールAPIとして公開する。将来のAI Agent層がAndroid固有オブジェクトへ触れず、`UiSnapshot`/`UiNode`/`ToolResult`だけで観測と操作を実行できる境界を確立する。
+
+### 利用者（M1）
+主な利用者は将来実装されるAI Agent層。M1時点ではAI Agent本体は実装せず、Debug OverlayおよびDeveloper Harnessを開発時の呼び出し元・受入確認用クライアントとする。Structured Tool API自体はこれらUIモジュールを参照してはならない。公開ツールは`observe()`と`click(snapshotId, nodeId)`の2つのみ（ツール一覧・入出力スキーマをプログラムから取得可能にする）。
+
+### 対象外（M1）
+AI Agent本体/Planner/Task engine/Scheduler/長期メモリ、Policy/Safety Layer・認可・リスク判定、LLM/Function Calling統合、HTTP/WebSocket/JSON-RPC/MCP等ネットワーク越し呼び出し、Tool APIの外部公開・Remote control・Chat UI、JSONシリアライズ基盤、`observe`/`click`以外のツール追加（setText/scroll/long-click/back/home/screenshot等）、`AccessibilityNodeInfo`等生オブジェクトの公開、Debug Overlay/Developer HarnessのUIデザイン変更、coordinate tap/ADB/shellの操作方式追加、既存モデル・stale snapshot保護・password redaction・ACTION_CLICK・fresh observationの挙動変更、`capture()`全リトライ失敗時のsnapshot明示無効化（別途将来課題）、保留中の実機再検証をM1着手条件とすること。
+
+### 受入条件（M1、すべて実行結果で確認。静的解析のみでのPASS禁止）
+- [ ] Structured Tool APIが独立モジュール/明確なパッケージ境界として存在し、`app`/`debug-harness`/Compose/View/`DebugOverlayController`に依存しない
+- [ ] 公開APIに`observe()`、`click(snapshotId, nodeId)`、ツール一覧取得手段が存在し、ツール一覧は`observe`と`click`の2件のみ
+- [ ] `observe`出力スキーマにstatus/message/snapshot/durationMsが定義され、`click`入力はsnapshotId(非空文字列)/nodeId(正の整数)必須、出力は既存`ToolResult`と一致
+- [ ] APIシグネチャ・スキーマに`AccessibilityNodeInfo`等生オブジェクトが含まれない
+- [ ] AccessibilityService接続中の`observe()`はSUCCESSと非nullSnapshotを返し、そのIDが`UiSnapshotEngine.currentSnapshot`と一致。未接続時は`USER_ACTION_REQUIRED`等明示的な非成功結果を返す（未処理例外や無意味なnullにしない）
+- [ ] `click(snapshotId, nodeId)`は既存`AndroidActionExecutor.click`へ1回だけ委譲（ラベル/viewId/座標を代替識別子にしない）。stale snapshotは`STALE_SNAPSHOT`、存在しないnodeIdは`NOT_FOUND`、fingerprint不一致も`STALE_SNAPSHOT`となり、API層で迂回しない
+- [ ] クリックは`ACTION_CLICK`のみ使用（coordinate tap/ADB/shell代替なし）。成功後は既存`AndroidActionExecutor`がfresh observationを行い、Structured Tool APIが独自capture処理を重ねない。previousSnapshotId一致・newSnapshotId非null・不一致を確認
+- [ ] fresh snapshot取得失敗時は既存どおり`FAILED`/`TIMEOUT`（クリックだけ成功扱いにしない）
+- [ ] passwordノードのtext/contentDescriptionがAPI経由でも常に`[REDACTED]`
+- [ ] Debug OverlayまたはDeveloper Harnessの少なくとも一方がStructured Tool API経由で`observe`/`click`を実行し、APIがUIなしでも利用可能なことを確認
+- [ ] Android Settings対象に`observe → click → fresh snapshot`のフローがEmulatorまたは実機で成功
+- [ ] 既存`UiSnapshotEngineTest`/`AndroidActionExecutorTest`含む関連単体テストが全PASS、かつStructured Tool APIの新規単体テスト（ツール一覧/委譲/成功失敗/stale透過性）もPASS
+- [ ] `.\gradlew.bat test`および`.\gradlew.bat assembleDebug`成功
+- [ ] READMEまたはM1文書に利用者/公開ツール/入出力/レイヤー境界/対象外を記載
+- [ ] リポジトリにAI Agent/Policy実装/LLM SDK/HTTPサーバー/MCPサーバー/Remote control用依存が追加されていない
+
+- 次の行動: Claude承認済み（Gate 1 PASS） → Geminiが作業単位（WU）へ分解 → Kimiが実装（TDD）。
+
+### 作業単位（WU）分解（Gemini案、Claude軽く確認済み・矛盾なし）
+**Wave 1（依存なし・並列可）**
+- WU-1: Gradleビルド設定・モジュール登録 — 新規`structured-tool-api/build.gradle.kts`、変更`settings.gradle.kts`。受入: `.\gradlew.bat projects`で`:structured-tool-api`認識、`assembleDebug`成功。
+- WU-2: インターフェース契約・スキーマ定義 — 新規`StructuredToolApi.kt`, `ToolDefinition.kt`, `ObserveToolResult.kt`。受入: `:structured-tool-api:compileDebugKotlin`成功。
+
+**Wave 2（Wave1完了後）**
+- WU-3: API実装クラス — 新規`AndroidStructuredToolApi.kt`（`observe`/`click`をUiSnapshotEngine/AndroidActionExecutorへ委譲）。受入: `:structured-tool-api:compileDebugKotlin`成功。
+- WU-4: 単体テスト — 新規`StructuredToolApiTest.kt`（ツール一覧・observe接続/未接続・password redaction・click委譲・stale/not found検証）。受入: `:structured-tool-api:test`全PASS。
+- WU-5: Debug Overlay統合 — 変更`app/build.gradle.kts`, `DebugOverlayController.kt`（呼び出し切替のみ、UI変更なし）。受入: `:app:assembleDebug`成功。
+- WU-6: Developer Harness統合 — 変更`debug-harness/build.gradle.kts`, `RancherDevHarnessScreen.kt`（呼び出し切替のみ、Compose UI変更なし）。受入: `:debug-harness:assembleDebug`成功。
+- WU-7: ドキュメント整備 — 新規`docs/M1_STRUCTURED_TOOL_API.md`、変更`README.md`。受入: 全体`.\gradlew.bat test`/`assembleDebug`成功。
+
+Kimiへは各WUをファイル所有権宣言に従い順に実装させ、WUごとに1コミット・TDD Red→Greenを徹底させる。
 
 ## 目的
 Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSnapshotへ変換し、Debug Harnessでactionable nodeを確認し、Android Settingsの「Connected devices」をsemantic node ID経由でCLICKし、遷移後に新しいUiSnapshotを生成する一連の流れ）を、コードレビューだけでなく実際にビルド・install・起動・操作して証明する。静的解析のみでの「成功」判定は禁止。
