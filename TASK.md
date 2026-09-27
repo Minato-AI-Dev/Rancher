@@ -1,7 +1,7 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: レビュー中（自動再観測バグの修正実装・単体テスト完了。Codex品質ゲートレビュー待ち）
-- 現在の担当: Kimi（実装完了）→ Codex（品質ゲートレビュー）
+- 状態: 完了（自動再観測バグの修正。Codex品質ゲートレビュー→ESCALATE→Claude設計判断によりPASS。実機再検証はユーザー指示により省略、将来課題として記録）
+- 現在の担当: なし（完了）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
 - 更新日: 2026-09-24
@@ -78,6 +78,9 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
 - 2026-09-16 Claude: このタスクはAGENTS.mdの「通常の実装・バグ修正・テスト」に該当するためKimiへ実装・検証実行を委譲する。アーキテクチャ（責務分離・UiNode/UiSnapshotモデル・stale snapshot保護・click方式）は既にユーザー仕様で確定しており、Claudeによる追加の設計判断は不要と判断。Kimiが2回失敗した箇所が出た場合のみClaudeにエスカレーションする。
 - 2026-09-17 Claude: Codexの品質ゲート判定（QUALITY-REVIEW.md）指摘2（Gate 3-1: TDD Redフェーズ証跡なし）について、本タスクは新機能開発ではなく既存実装のM0受入検証＋リグレッションテスト追加であるため、Red→Green手順の追加記録は不要と判断し例外承認する。指摘1（README/wrapper.jar不整合）・指摘3（重要処理の日本語説明不足）・指摘5（.memory/index.md未更新）はAntigravityへ差し戻し修正を依頼する。指摘4・6（Codexサンドボックスがandroid SDK/GitHub PRへアクセス不能）はCodex環境側の制約であり、Claudeが本セッション内で`./gradlew.bat assembleDebug`・両モジュールのunit test再実行、および`gh pr view`によるPR本文取得で独立に検証済みのため、実質的な欠陥ではないと判断。
 - 2026-09-24 Claude: ユーザーの指示で実機（MIUI/Android 16, `fux8bevkxkdidat4`）上でRancherを実際に操作し、M0の観測→クリック→再観測ループを検証。「その他の接続オプション」相当ノードをクリックし`com.android.settings`→`com.android.phone`（モバイルネットワーク設定）へ遷移させたところ、README記載の安全設計「A fresh observation is attempted after every successful click」に反し、`AndroidActionExecutor.click()`内の自動`UiSnapshotEngine.capture()`が発火した形跡がlogcatに一切残らないまま約14秒間UIが更新されず、手動で「更新」ボタンを押して初めて`captured snap_000005`のログが出た。コード調査の結果、`UiSnapshotEngine.capture()`（UiSnapshotEngine.kt:30-37）は`AccessibilityBridge.currentRoot()`（=`rootInActiveWindow`）が`null`の場合、ログを一切出さず黙って`null`を返す設計になっており、`AndroidActionExecutor.click()`側もその`null`を1回きりの試行として扱い、リトライしない（AndroidActionExecutor.kt:111-120）。実機ログでは、クリック後の遷移がRancher自身のタスク（`baseActivity=dev.rancher.app/.MainActivity`）に埋め込まれる非標準的なウィンドウ構成になっており、遷移直後に`rootInActiveWindow`が一時的に取得できなかった可能性が高いと判断。これは「1操作→1回の必ず成功する再観測」という中核の安全設計が実機で静かに破られるケースであり、アーキテクチャ不変条件（`One UI-changing action -> one fresh observation`）自体は変えず、**capture()が一時的にnullを返した場合の短いリトライ**と、**再観測に失敗した場合はオーバーレイ上で明示的にユーザーへ知らせる**の2点で対応する方針とする。Claudeはコードを編集せず、Kimiへ実装を委譲する。
+- 2026-09-26 Claude: 実機（`fux8bevkxkdidat4`）再検証を試みたがUSB切断により中断（USB再接続後もadb devicesに認識されず）。ユーザーの指示「実機確認なしで進めよう」により、実機での自動再観測の再現確認は行わずCodex品質ゲートレビューへ進める。単体テスト8件PASS・`assembleDebug` BUILD SUCCESSFUL・修正済みAPKのdex文字列確認は完了済みであり、これらをレビュー材料としてCodexへ引き継ぐ。
+- 2026-09-26 Codex（品質ゲートレビュー、コミット`7012fa9`対象、`model_reasoning_effort=low`）: 判定「ESCALATE」。要旨: (1) `UiSnapshotEngine.kt`のリトライ実装はACTION_CLICK経路・事前stale検査・不変条件を直接壊していない。(2) 追加テスト2件はRed→Green形式として妥当だが、汎用`retry()`単体のテストであり`capture()`との配線切断までは検知できない限定的な回帰テスト。(3) `AndroidActionExecutor.click()`/`DebugOverlayController.kt`は変更不要の判断は妥当。(4) **懸念点**: 全リトライ失敗時、`_currentSnapshot`が更新されず旧snapshotが残り続けるため、stale snapshot保護の保証に残余リスクがあるのではないか、との指摘。この懸念を理由に単純PASSにはできないとしてESCALATE。
+- 2026-09-26 Claude（設計判断、Codexのエスカレーションを受けて）: `UiSnapshotEngine.resolve()`のコードを確認した結果、stale判定は (a) snapshotId一致確認 と (b) 実ライブノードをpath経由で再取得し`matchesFingerprint()`（viewId/text/className/bounds±8px/clickable/enabled照合）で不一致ならStaleSnapshot、の二重構造になっている。「全リトライ失敗時に`_currentSnapshot`が更新されず旧snapshotが残る」という挙動自体は今回の修正で新規に生まれたものではなく、修正前（root取得失敗時に即座にnullを返すだけで`_currentSnapshot`を更新しない）と終端状態は同一であり、今回のリトライ追加は「失敗と判定するまでの猶予を最大200ms広げた」だけである。かつfingerprint照合という第二の防御層が既存であり、画面が実際に変化していれば旧snapshotでの誤操作はそこで防止される。よってCodexが指摘した残余リスクは本タスクのスコープ外にある既存の設計特性であり、今回の修正が悪化させたものではないと判断し、**PASS**とする。実機再検証（USB切断のため未実施）についても、ユーザーの明示的判断により今回は省略を承認する。ただし将来の改善候補として、全リトライ失敗時に`_currentSnapshot`を明示的に無効化する設計（`resolve()`が即StaleSnapshotを返すようにする）と、`capture()`との配線を直接検証する回帰テストの追加を`.memory/knowledge/`へ記録し、次回関連作業時に検討する。
 
 ## 作業履歴
 - 2026-09-24 Kimi（追加タスク対応）:
@@ -152,7 +155,8 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
     - `testRetry_returnsNullAfterAllAttemptsFail`: リトライしても全て null なら最終的に null を返す（既存動作を壊さない）。
   - 単体テスト全8件（android-snapshot 6件、android-actions 2件）が failures=0, errors=0 で PASS。`.&gradlew.bat assembleDebug` も BUILD SUCCESSFUL。
 - 未対応・次工程:
-  - 実機（MIUI/Android 16）での再検証は未実施（Emulator/Pixel_8a 上の単体テスト・ビルド検証まで）。
+  - 実機（MIUI/Android 16）での再検証は未実施（Emulator/Pixel_8a 上の単体テスト・ビルド検証まで）。ユーザー指示により今回は省略、将来機会があれば実施。
+  - 将来課題（`.memory/knowledge/`へ記録推奨）: 全リトライ失敗時に`_currentSnapshot`を明示的に無効化する設計、`capture()`配線を直接検証する回帰テストの追加。
   - コミットは未実施（各自の判断で可）。push/PR作成はしない（ユーザー指示）。
-- 次の担当者: Codex（品質ゲートレビュー）
-- 次の行動: `QUALITY-REVIEW.md` または Gate 3/Gate 4 相当のレビューを実施し、変更ファイル（`UiSnapshotEngine.kt`, `UiSnapshotEngineTest.kt`）と TDD 証跡・テスト結果を確認の上 PASS/CHANGES REQUIRED/ESCALATE を記録。必要に応じてユーザーへ実機再検証を依頼。
+- 次の担当者: なし（本タスク完了）
+- 次の行動: 特になし。次回このコードに触れる際は上記「将来課題」を参照。

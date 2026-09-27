@@ -45,6 +45,8 @@
   - 「One action -> one fresh observation」の徹底。クリック実行後に対象アプリのUI変化イベントを待機し、画面安定後に必ず新しい `UiSnapshot` を生成。
 - **serviceInfo 動的再設定**:
   - エミュレータ等の接続不安定を防止するため、`onServiceConnected` 時にコードから監視設定（イベント種別、フラグ）を明示的に再適用。
+- **capture() の一時的null吸収リトライ（2026-09-24修正・2026-09-26レビュー確定）**:
+  - 実機でクリック直後に`rootInActiveWindow`が一瞬nullになる事象への対処として短いリトライ（3回・100ms間隔）を追加。全リトライ失敗時に旧snapshotが残る残余リスクはfingerprint照合により実質的に緩和されており、スコープ外の既存設計特性として対応不要と判断（PASS確定）。将来課題（旧snapshot明示無効化、capture()配線の直接テスト）あり。
 - 詳細は [knowledge/m0-safety-architecture.md](knowledge/m0-safety-architecture.md) を参照。
 
 ---
