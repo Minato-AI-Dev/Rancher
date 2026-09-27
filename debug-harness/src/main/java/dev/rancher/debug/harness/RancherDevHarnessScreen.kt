@@ -35,10 +35,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.rancher.android.accessibility.AccessibilityBridge
-import dev.rancher.android.actions.AndroidActionExecutor
 import dev.rancher.android.snapshot.UiSnapshotEngine
 import dev.rancher.core.model.ToolResult
 import dev.rancher.core.model.UiNode
+import dev.rancher.tool.api.AndroidStructuredToolApi
+import dev.rancher.tool.api.ObserveToolResult
 import kotlinx.coroutines.launch
 
 @Composable
@@ -48,6 +49,7 @@ fun RancherDevHarnessScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val api = remember { AndroidStructuredToolApi() }
     val service by AccessibilityBridge.service.collectAsState()
     val activePackage by AccessibilityBridge.activePackage.collectAsState()
     val snapshot by UiSnapshotEngine.currentSnapshot.collectAsState()
@@ -55,7 +57,7 @@ fun RancherDevHarnessScreen(
 
     LaunchedEffect(service) {
         if (service != null) {
-            UiSnapshotEngine.capture()
+            lastResult = api.observe().toToolResult()
         }
     }
 
@@ -119,7 +121,7 @@ fun RancherDevHarnessScreen(
                 onClick = {
                     scope.launch {
                         lastResult = null
-                        UiSnapshotEngine.capture()
+                        lastResult = api.observe().toToolResult()
                     }
                 },
             ) {
@@ -152,6 +154,7 @@ fun RancherDevHarnessScreen(
                         NodeCard(
                             node = node,
                             snapshotId = snapshot!!.id,
+                            api = api,
                             onResult = { lastResult = it },
                         )
                     }
@@ -165,6 +168,7 @@ fun RancherDevHarnessScreen(
 private fun NodeCard(
     node: UiNode,
     snapshotId: String,
+    api: AndroidStructuredToolApi,
     onResult: (ToolResult) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -195,7 +199,7 @@ private fun NodeCard(
                         scope.launch {
                             busy = true
                             try {
-                                onResult(AndroidActionExecutor.click(snapshotId, node.id))
+                                onResult(api.click(snapshotId, node.id))
                             } finally {
                                 busy = false
                             }
@@ -216,3 +220,11 @@ private fun openAccessibilitySettings(context: Context) {
         },
     )
 }
+
+private fun ObserveToolResult.toToolResult(): ToolResult = ToolResult(
+    status = status,
+    message = message,
+    previousSnapshotId = null,
+    newSnapshotId = snapshot?.id,
+    durationMs = durationMs,
+)

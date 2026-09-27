@@ -30,6 +30,7 @@ dependencies {
     implementation(project(":android-accessibility"))
     implementation(project(":android-snapshot"))
     implementation(project(":android-actions"))
+    implementation(project(":structured-tool-api"))
 
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
