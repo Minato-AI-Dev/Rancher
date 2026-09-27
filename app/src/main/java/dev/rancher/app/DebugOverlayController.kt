@@ -11,11 +11,12 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import dev.rancher.android.actions.AndroidActionExecutor
 import dev.rancher.android.snapshot.UiSnapshotEngine
 import dev.rancher.core.model.ToolResult
 import dev.rancher.core.model.UiNode
 import dev.rancher.core.model.UiSnapshot
+import dev.rancher.tool.api.AndroidStructuredToolApi
+import dev.rancher.tool.api.ObserveToolResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,6 +38,7 @@ object DebugOverlayController {
     private var scope: CoroutineScope? = null
     private var collector: Job? = null
     private var status: ToolResult? = null
+    private val api = AndroidStructuredToolApi()
 
     private const val TAG = "RancherOverlay"
 
@@ -82,7 +84,11 @@ object DebugOverlayController {
         }
 
         overlayScope.launch {
-            UiSnapshotEngine.capture()
+            val result = api.observe()
+            if (result.status != dev.rancher.core.model.ToolStatus.SUCCESS) {
+                status = result.toToolResult()
+                render(service, panel, UiSnapshotEngine.currentSnapshot.value)
+            }
         }
     }
 
@@ -117,7 +123,13 @@ object DebugOverlayController {
         controls.addView(Button(service).apply {
             text = service.getString(R.string.button_refresh)
             setOnClickListener {
-                scope?.launch { UiSnapshotEngine.capture() }
+                scope?.launch {
+                    val result = api.observe()
+                    if (result.status != dev.rancher.core.model.ToolStatus.SUCCESS) {
+                        status = result.toToolResult()
+                        render(service, panel, UiSnapshotEngine.currentSnapshot.value)
+                    }
+                }
             }
         })
         controls.addView(Button(service).apply {
@@ -195,7 +207,7 @@ object DebugOverlayController {
                     setOnClickListener {
                         isEnabled = false
                         scope?.launch {
-                            status = AndroidActionExecutor.click(snapshotId, node.id)
+                            status = api.click(snapshotId, node.id)
                             render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
                         }
                     }
@@ -218,4 +230,12 @@ object DebugOverlayController {
 
     private fun dp(service: AccessibilityService, value: Int): Int =
         (value * service.resources.displayMetrics.density).toInt()
+
+    private fun ObserveToolResult.toToolResult(): ToolResult = ToolResult(
+        status = status,
+        message = message,
+        previousSnapshotId = null,
+        newSnapshotId = snapshot?.id,
+        durationMs = durationMs,
+    )
 }
