@@ -1,7 +1,7 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 実装中（M1: Structured Tool API — Gate 1 PASS、Gemini分解済み、Kimiへ実装委譲）
-- 現在の担当: Kimi（実装、Wave1→Wave2順）
+- 状態: レビュー中（M1: Structured Tool API — Gate 3 実装完了、Codex品質ゲートレビュー待ち）
+- 現在の担当: Codex（品質ゲートレビュー）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
 - 更新日: 2026-09-27
@@ -193,6 +193,16 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
 - Test 8 (password redaction):
   - コマンド: `.\gradlew.bat :android-snapshot:testDebugUnitTest`
   - 結果: `UiSnapshotEngineTest.testPasswordRedaction_replacesPasswordWithRedactedText` (PASS), `testPasswordRedaction_inUiNodeModel` (PASS)。password=true ノードの text および contentDescription が平文を出さず `[REDACTED]` になることを確認。レビュー修正後も4件PASS確認。
+- M1 Structured Tool API 追加タスク（2026-09-27）テスト:
+  - 実行環境: OS: Windows 11 Home (amd64) / JDK: OpenJDK 21.0.10 (LTS) / Gradle: 9.6.0 / AGP: 9.4.0 / Kotlin: 2.4.20
+  - WU-1: `.\gradlew.bat projects` で `:structured-tool-api` 認識確認。`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL（空の新規モジュールを含む全プロジェクトがビルド可能）。
+  - WU-2: `.\gradlew.bat :structured-tool-api:testDebugUnitTest` BUILD SUCCESSFUL。`SchemaDefinitionTest` 2件 PASS（`ToolDefinition` / `ObserveToolResult` / `StructuredToolApi.tools` の契約確認）。
+  - WU-3: `.\gradlew.bat :structured-tool-api:testDebugUnitTest` BUILD SUCCESSFUL。`StructuredToolApiTest` 6件 PASS（observe接続中/未接続/capture失敗、click委譲・NOT_FOUND透過・STALE_SNAPSHOT透過）。
+  - WU-4: `.\gradlew.bat :structured-tool-api:testDebugUnitTest` BUILD SUCCESSFUL。追加した password redaction テストと tool catalog テストを含む全8件 PASS。
+  - WU-5: `.\gradlew.bat :app:assembleDebug` BUILD SUCCESSFUL。`DebugOverlayController` の Refresh / CLICK を `AndroidStructuredToolApi` 経由に切り替え、UI構成は変更なし。
+  - WU-6: `.\gradlew.bat :debug-harness:assembleDebug` BUILD SUCCESSFUL。`RancherDevHarnessScreen` の Refresh / CLICK を `AndroidStructuredToolApi` 経由に切り替え、Compose UIは変更なし。
+  - WU-7: `.\gradlew.bat test` BUILD SUCCESSFUL（全モジュールの単体テスト、structured-tool-apiを含む）。`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL（全モジュールのDebugビルド、app-debug.apk生成まで確認）。
+  - 備考: `UiSnapshotEngine.kt`, `AndroidActionExecutor.kt`, `core-model`配下の既存モデルは一切変更せず、Structured Tool APIから再利用する形で実装。
 
 ## 引き継ぎメモ
 - 完了事項:
@@ -205,9 +215,18 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
     - `testRetry_returnsValueAfterTransientNulls`: root が最初 null で数回後に非nullになるケースでリトライ成功。
     - `testRetry_returnsNullAfterAllAttemptsFail`: リトライしても全て null なら最終的に null を返す（既存動作を壊さない）。
   - 単体テスト全8件（android-snapshot 6件、android-actions 2件）が failures=0, errors=0 で PASS。`.&gradlew.bat assembleDebug` も BUILD SUCCESSFUL。
+  - 追加タスク（2026-09-27）: M1 Structured Tool API を導入。
+    - 新規モジュール `structured-tool-api` を作成し、`settings.gradle.kts` / `build.gradle.kts` を登録（WU-1）。
+    - `StructuredToolApi` インターフェース、`ToolDefinition`、`ObserveToolResult` を定義。公開ツールは `observe` と `click` の2件のみ（WU-2）。
+    - `AndroidStructuredToolApi` を実装。`observe()` は未接続時に `USER_ACTION_REQUIRED`、capture成功時に `SUCCESS`+snapshot、capture失敗時に `FAILED` を返す。`click()` は既存 `AndroidActionExecutor.click` へ1回だけ委譲し、stale/not-found を透過的に返す（WU-3）。
+    - `StructuredToolApiTest` / `SchemaDefinitionTest` を新規作成。ツール一覧、observe成功/未接続/capture失敗、click委譲、STALE_SNAPSHOT/NOT_FOUND透過、password redaction API経由での保持を検証。合計8件 PASS（WU-2〜WU-4）。
+    - `app/DebugOverlayController.kt` と `debug-harness/RancherDevHarnessScreen.kt` の Refresh / CLICK 呼び出しを `AndroidStructuredToolApi` 経由に切り替え。UI構成・デザインは変更なし（WU-5, WU-6）。
+    - `docs/M1_STRUCTURED_TOOL_API.md` を新規作成し、`README.md` を更新（WU-7）。
+    - 全WUにおいて `UiSnapshotEngine.kt` / `AndroidActionExecutor.kt` / `core-model` 配下の既存モデルは変更せず、再利用のみとした。
+    - 全体的な `test` / `assembleDebug` が BUILD SUCCESSFUL。
 - 未対応・次工程:
   - 実機（MIUI/Android 16）での再検証は未実施（Emulator/Pixel_8a 上の単体テスト・ビルド検証まで）。ユーザー指示により今回は省略、将来機会があれば実施。
   - 将来課題（`.memory/knowledge/`へ記録推奨）: 全リトライ失敗時に`_currentSnapshot`を明示的に無効化する設計、`capture()`配線を直接検証する回帰テストの追加。
   - コミットは未実施（各自の判断で可）。push/PR作成はしない（ユーザー指示）。
-- 次の担当者: なし（本タスク完了）
-- 次の行動: 特になし。次回このコードに触れる際は上記「将来課題」を参照。
+- 次の担当者: Codex（品質ゲートレビュー、Gate 3→Gate 4）
+- 次の行動: CodexがM1 Structured Tool APIの実装結果を品質ゲートレビューし、PASS/CHANGES REQUIRED/ESCALATEを記録する。レビュー材料として、WU-1〜WU-7のコミット、`structured-tool-api`の新規テスト8件、`:app:assembleDebug`/`:debug-harness:assembleDebug`成功、全体`test`/`assembleDebug`成功を用いる。
