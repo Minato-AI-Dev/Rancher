@@ -65,6 +65,7 @@ AI Agent本体/Planner/Task engine/Scheduler/長期メモリ、Policy/Safety Lay
 - WU-6: Developer Harness統合 — 変更`debug-harness/build.gradle.kts`, `RancherDevHarnessScreen.kt`（呼び出し切替のみ、Compose UI変更なし）。受入: `:debug-harness:assembleDebug`成功。
 - WU-7: ドキュメント整備 — 新規`docs/M1_STRUCTURED_TOOL_API.md`、変更`README.md`。受入: 全体`.\gradlew.bat test`/`assembleDebug`成功。
 
+- WU-8（Codex CHANGES REQUIRED対応・担当Kimi、2026-09-28）: 対象ファイル=`structured-tool-api/src/main/java/dev/rancher/tool/api/AndroidStructuredToolApi.kt`、`structured-tool-api/src/test/java/dev/rancher/tool/api/StructuredToolApiTest.kt`、`TASK.md`のテスト結果欄のみ。手順: (a)先にテスト追加しRed確認(コマンドと失敗内容をTASK.mdへ記録): clickの委譲回数==1をカウンタで検査、SUCCESS時のpreviousSnapshotId/newSnapshotId透過、FAILED・TIMEOUT・STALE_SNAPSHOT・NOT_FOUND透過、observe成功時の戻りsnapshotがcaptureの戻り値と同一(currentSnapshot引数なしで)。(b)未使用の`currentSnapshot`コンストラクタ引数を削除し、既存テストの呼び出しも修正。(c)`.\gradlew.bat :structured-tool-api:testDebugUnitTest test assembleDebug`をGreenにし結果を記録。(d)TASK.md内`SchemaDefinitionTest`の件数記載を実際の3件に訂正し合計件数も実行結果に合わせる。他ファイルは編集禁止。コミットは1件、メッセージ`test(structured-tool-api): WU-8 tighten click/observe contract tests`。
 Kimiへは各WUをファイル所有権宣言に従い順に実装させ、WUごとに1コミット・TDD Red→Greenを徹底させる。
 
 ## 目的
@@ -132,6 +133,12 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
 - 2026-09-26 Claude: 実機（`fux8bevkxkdidat4`）再検証を試みたがUSB切断により中断（USB再接続後もadb devicesに認識されず）。ユーザーの指示「実機確認なしで進めよう」により、実機での自動再観測の再現確認は行わずCodex品質ゲートレビューへ進める。単体テスト8件PASS・`assembleDebug` BUILD SUCCESSFUL・修正済みAPKのdex文字列確認は完了済みであり、これらをレビュー材料としてCodexへ引き継ぐ。
 - 2026-09-26 Codex（品質ゲートレビュー、コミット`7012fa9`対象、`model_reasoning_effort=low`）: 判定「ESCALATE」。要旨: (1) `UiSnapshotEngine.kt`のリトライ実装はACTION_CLICK経路・事前stale検査・不変条件を直接壊していない。(2) 追加テスト2件はRed→Green形式として妥当だが、汎用`retry()`単体のテストであり`capture()`との配線切断までは検知できない限定的な回帰テスト。(3) `AndroidActionExecutor.click()`/`DebugOverlayController.kt`は変更不要の判断は妥当。(4) **懸念点**: 全リトライ失敗時、`_currentSnapshot`が更新されず旧snapshotが残り続けるため、stale snapshot保護の保証に残余リスクがあるのではないか、との指摘。この懸念を理由に単純PASSにはできないとしてESCALATE。
 - 2026-09-26 Claude（設計判断、Codexのエスカレーションを受けて）: `UiSnapshotEngine.resolve()`のコードを確認した結果、stale判定は (a) snapshotId一致確認 と (b) 実ライブノードをpath経由で再取得し`matchesFingerprint()`（viewId/text/className/bounds±8px/clickable/enabled照合）で不一致ならStaleSnapshot、の二重構造になっている。「全リトライ失敗時に`_currentSnapshot`が更新されず旧snapshotが残る」という挙動自体は今回の修正で新規に生まれたものではなく、修正前（root取得失敗時に即座にnullを返すだけで`_currentSnapshot`を更新しない）と終端状態は同一であり、今回のリトライ追加は「失敗と判定するまでの猶予を最大200ms広げた」だけである。かつfingerprint照合という第二の防御層が既存であり、画面が実際に変化していれば旧snapshotでの誤操作はそこで防止される。よってCodexが指摘した残余リスクは本タスクのスコープ外にある既存の設計特性であり、今回の修正が悪化させたものではないと判断し、**PASS**とする。実機再検証（USB切断のため未実施）についても、ユーザーの明示的判断により今回は省略を承認する。ただし将来の改善候補として、全リトライ失敗時に`_currentSnapshot`を明示的に無効化する設計（`resolve()`が即StaleSnapshotを返すようにする）と、`capture()`との配線を直接検証する回帰テストの追加を`.memory/knowledge/`へ記録し、次回関連作業時に検討する。
+- 2026-09-28 Claude（設計裁定、M1 Codex品質ゲート CHANGES REQUIRED 5件を受けて）:
+  - 指摘4（TDD Red証跡なし）: M0レビュー時（2026-09-17）と同様、Redログは遡って再現できないため例外承認する。ただし今後の修正（WU-8）はテスト先行のRed→Green証跡をTASK.mdへ記録すること。
+  - 指摘3（`currentSnapshot`未使用）: `UiSnapshotEngine.capture()`が成功時に`_currentSnapshot`を更新する（UiSnapshotEngine.kt 242/251行）ため、APIは`capture()`の戻り値を返せば`currentSnapshot`と一致する。API層の未使用引数`currentSnapshot`は削除する（設計意図の整理）。実エンジンとの一致はEmulator実行証跡（指摘1）で確認する。
+  - 指摘2（clickの安全契約）: fingerprint不一致・fresh取得失敗(FAILED/TIMEOUT)の判定は既存`AndroidActionExecutor`の責務でありM0の`AndroidActionExecutorTest`が検証済み。API層は「1回だけ委譲し結果を無加工で透過する」ことをテストで厳密に証明する（呼出回数==1、SUCCESS時のprevious/new ID透過、FAILED/TIMEOUT/STALE_SNAPSHOT/NOT_FOUND透過）。
+  - 指摘5: TASK.mdのテスト件数を実行結果に合わせて訂正する。
+  - 指摘1: WU-8のコード修正完了後、Emulatorでobserve→click→fresh snapshotを実行し証跡を記録する。
 
 ## 作業履歴
 - 2026-09-24 Kimi（追加タスク対応）:
