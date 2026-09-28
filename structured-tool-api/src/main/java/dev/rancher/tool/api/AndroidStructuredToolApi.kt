@@ -16,7 +16,6 @@ import dev.rancher.core.model.UiSnapshot
  */
 class AndroidStructuredToolApi(
     private val isConnected: () -> Boolean = { AccessibilityBridge.isConnected() },
-    private val currentSnapshot: () -> UiSnapshot? = { UiSnapshotEngine.currentSnapshot.value },
     private val capture: suspend () -> UiSnapshot? = { UiSnapshotEngine.capture() },
     private val clickExecutor: suspend (String, Int) -> ToolResult = { snapshotId, nodeId ->
         AndroidActionExecutor.click(snapshotId, nodeId)
