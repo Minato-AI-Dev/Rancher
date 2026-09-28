@@ -220,6 +220,12 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
       - コマンド: `.\gradlew.bat test assembleDebug`
       - 結果: BUILD SUCCESSFUL（1m 10s）。全モジュールの単体テスト22件全PASS（android-actions 2件, android-snapshot 6件, structured-tool-api 14件）。app-debug.apk 生成まで確認。
   - 備考: `UiSnapshotEngine.kt`, `AndroidActionExecutor.kt`, `core-model`配下の既存モデルは一切変更せず、Structured Tool APIから再利用する形で実装。
+  - 指摘1 対応（Emulator実行証跡、2026-09-28 Claude実施）: 環境=Android Emulator `Pixel_8a`（API 36, `emulator-5554`）、`app-debug.apk`（HEAD `983dda7`）を`adb install`、AccessibilityService有効化済み（`dumpsys accessibility`でBound確認）。
+    - observe（M1 API経由）: Developer Harnessの`Refresh current window`が`Last action: SUCCESS / Captured snap_000003.`を表示。Overlay Refreshは Settings 上で `RancherSnapshot: captured snap_000006 package=com.android.settings semanticNodes=33 rawNodes=73`。Overlay表示は`Snapshot: snap_000006 / Package: com.android.settings`。
+    - click（M1 API経由）: Overlayの`CLICK #2`押下 → `RancherActions: CLICK snapshot=snap_000006 node=2 label=com.android.settings:id/search_action_bar`（ACTION_CLICKのみ）。
+    - fresh snapshot: 直後に`captured snap_000007 package=com.android.settings`。previousSnapshotId `snap_000006` ≠ newSnapshotId `snap_000007`。画面は「Search settings」検索画面へ遷移したことをスクリーンショットで確認。
+    - 観察事項（M1対象外・既存M0挙動）: クリック直後のfresh snapshot（snap_000007）はsemanticNodes=33/rawNodes=73と遷移前と同数で、Overlayに旧画面のノードが残って表示された。画面遷移アニメーション完了前に再取得している可能性があり、将来課題として`.memory/knowledge/`へ記録推奨（M1の受入条件はID不一致・非nullで満たす）。
+    - 補足: エミュレータ起動直後は「System UI isn't responding」が出たため`Wait`で待機してから実施。adbは検証操作（入力・ログ取得）にのみ使用し、Rancher本体の操作方式には使っていない。
 
 ## 引き継ぎメモ
 - 完了事項:
