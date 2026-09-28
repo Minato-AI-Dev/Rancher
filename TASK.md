@@ -1,7 +1,7 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: レビュー中（M1: Structured Tool API — Gate 3 WU-8 実装完了、Codex品質ゲート再レビュー待ち）
-- 現在の担当: Codex（品質ゲート再レビュー）
+- 状態: 完了（M1: Structured Tool API — Codex品質ゲート 2026-09-28 例外つきPASS）
+- 現在の担当: なし（M1完了）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
 - 更新日: 2026-09-28
@@ -141,6 +141,7 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
   - 指摘1: WU-8のコード修正完了後、Emulatorでobserve→click→fresh snapshotを実行し証跡を記録する。
 - 2026-09-28 Claude（設計裁定の訂正、Codex再レビュー CHANGES REQUIRED を受けて）: 上記裁定の「fingerprint不一致・fresh取得失敗の判定はM0の`AndroidActionExecutorTest`が検証済み」は事実誤認だった。M0テストが検証しているのはsnapshot ID不一致・snapshotなしのSTALE_SNAPSHOTのみで、(a)同一IDでの画面要素fingerprint不一致 (b)click成功後のfresh capture失敗(FAILED/TIMEOUT)は、いずれもJVM単体テストで未検証。コード確認の結果、`UiSnapshotEngine`/`AndroidActionExecutor`/`AccessibilityBridge`はDI不可のsingleton `object`で、`_service`はprivate、モックライブラリ(mockk/Robolectric)も未導入のため、これらを検証するには(1)既存エンジンへのテスト用seam追加（M1の対象外「既存挙動変更・保護ファイル変更禁止」に抵触）、(2)テスト依存(Robolectric等)の追加、(3)Emulator計装テスト、のいずれかが必要となる。M1のスコープ・優先順位に関わるため、ユーザーへエスカレーションする。
 - 2026-09-28 ユーザー承認（エスカレーション回答）: 残る1件（fingerprint不一致／click後fresh capture失敗のJVM単体テスト不足）は「既知の課題として承認」。M1のスコープ（保護ファイル変更禁止・追加依存なし）は維持し、当該2分岐の自動テスト化（seam追加／Robolectric等／計装テストのいずれか）は次マイルストーン以降の課題とする。当該分岐の実装コードはCodexが静的に確認済みで、Emulator上でACTION_CLICK・fresh snapshot(ID更新)の正常系を確認済み。Codexの再判定ではこの承認を例外として扱うこと。
+- 2026-09-28 Codex（品質ゲート最終再判定、`model_reasoning_effort=low`）: 判定「PASS（例外つきPASS）」。例外=ユーザー承認済みの既知課題（fingerprint不一致／click後fresh capture失敗のJVMテスト不足、`.memory/knowledge/engine-test-seams-gap.md`）。全文は`%TEMP%\codex_m1_review3.txt`。軽微事項: `StructuredToolApiTest`クラスKDocが古い「WU-3 Red-phase tests」表記のまま（非ブロッキング）。
 
 ## 作業履歴
 - 2026-09-24 Kimi（追加タスク対応）:
