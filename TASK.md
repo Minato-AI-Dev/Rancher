@@ -139,6 +139,7 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
   - 指摘2（clickの安全契約）: fingerprint不一致・fresh取得失敗(FAILED/TIMEOUT)の判定は既存`AndroidActionExecutor`の責務でありM0の`AndroidActionExecutorTest`が検証済み。API層は「1回だけ委譲し結果を無加工で透過する」ことをテストで厳密に証明する（呼出回数==1、SUCCESS時のprevious/new ID透過、FAILED/TIMEOUT/STALE_SNAPSHOT/NOT_FOUND透過）。
   - 指摘5: TASK.mdのテスト件数を実行結果に合わせて訂正する。
   - 指摘1: WU-8のコード修正完了後、Emulatorでobserve→click→fresh snapshotを実行し証跡を記録する。
+- 2026-09-28 Claude（設計裁定の訂正、Codex再レビュー CHANGES REQUIRED を受けて）: 上記裁定の「fingerprint不一致・fresh取得失敗の判定はM0の`AndroidActionExecutorTest`が検証済み」は事実誤認だった。M0テストが検証しているのはsnapshot ID不一致・snapshotなしのSTALE_SNAPSHOTのみで、(a)同一IDでの画面要素fingerprint不一致 (b)click成功後のfresh capture失敗(FAILED/TIMEOUT)は、いずれもJVM単体テストで未検証。コード確認の結果、`UiSnapshotEngine`/`AndroidActionExecutor`/`AccessibilityBridge`はDI不可のsingleton `object`で、`_service`はprivate、モックライブラリ(mockk/Robolectric)も未導入のため、これらを検証するには(1)既存エンジンへのテスト用seam追加（M1の対象外「既存挙動変更・保護ファイル変更禁止」に抵触）、(2)テスト依存(Robolectric等)の追加、(3)Emulator計装テスト、のいずれかが必要となる。M1のスコープ・優先順位に関わるため、ユーザーへエスカレーションする。
 
 ## 作業履歴
 - 2026-09-24 Kimi（追加タスク対応）:
