@@ -55,3 +55,4 @@
 
 - [knowledge/environment-and-tooling.md](knowledge/environment-and-tooling.md): SDK、AVD、Gradle、Java、実行環境知見
 - [knowledge/m0-safety-architecture.md](knowledge/m0-safety-architecture.md): セーフティ機構、不変条件、アクセシビリティ知見
+- [engine-test-seams-gap](knowledge/engine-test-seams-gap.md) — fingerprint不一致/fresh取得失敗のJVMテスト不足（M1で承認済みの既知課題）
