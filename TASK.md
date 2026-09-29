@@ -1,10 +1,10 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 完了（M1: Structured Tool API — Codex品質ゲート 2026-09-28 例外つきPASS）
-- 現在の担当: なし（M1完了）
+- 状態: 依頼（M2: ツール拡張 longClick/scroll/back/home — 仕様確定、Gemini分解待ち）
+- 現在の担当: Gemini（作業単位分解）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
-- 更新日: 2026-09-28
+- 更新日: 2026-09-29
 - 優先順位: 高
 - 期限: 期限なし
 
@@ -67,6 +67,46 @@ AI Agent本体/Planner/Task engine/Scheduler/長期メモリ、Policy/Safety Lay
 
 - WU-8（Codex CHANGES REQUIRED対応・担当Antigravity、2026-09-28）: 対象ファイル=`structured-tool-api/src/main/java/dev/rancher/tool/api/AndroidStructuredToolApi.kt`、`structured-tool-api/src/test/java/dev/rancher/tool/api/StructuredToolApiTest.kt`、`TASK.md`のテスト結果欄のみ。手順: (a)先にテスト追加しRed確認(コマンドと失敗内容をTASK.mdへ記録): clickの委譲回数==1をカウンタで検査、SUCCESS時のpreviousSnapshotId/newSnapshotId透過、FAILED・TIMEOUT・STALE_SNAPSHOT・NOT_FOUND透過、observe成功時の戻りsnapshotがcaptureの戻り値と同一(currentSnapshot引数なしで)。(b)未使用の`currentSnapshot`コンストラクタ引数を削除し、既存テストの呼び出しも修正。(c)`.\gradlew.bat :structured-tool-api:testDebugUnitTest test assembleDebug`をGreenにし結果を記録。(d)TASK.md内`SchemaDefinitionTest`の件数記載を実際の3件に訂正し合計件数も実行結果に合わせる。他ファイルは編集禁止。コミットは1件、メッセージ`test(structured-tool-api): WU-8 tighten click/observe contract tests`。[完了]（※Kimi残高0のため担当をAntigravityへ引き継ぎ実装完了）
 Kimiへは各WUをファイル所有権宣言に従い順に実装させ、WUごとに1コミット・TDD Red→Greenを徹底させる。
+
+## 追加タスク（2026-09-29）: M2 ツール拡張（longClick / scroll / back / home）
+- 背景: ユーザーの痛み「clickしかできないのが不便」。M1完了後の次マイルストーンとして、Structured Tool APIが公開するツールをobserve/click以外に拡張する。AI Agent層・LLM統合はまだ着手しない（README「Do not add an LLM before that validation」を継続）。
+- Claudeの設計判断（スコープ確定、2026-09-29 ユーザー承認済み）:
+  - 追加する4ツール: `longClick(snapshotId, nodeId)`（`ACTION_LONG_CLICK`）、`scroll(snapshotId, nodeId, direction)`（`ACTION_SCROLL_FORWARD`/`ACTION_SCROLL_BACKWARD`）、`back()`（`performGlobalAction(GLOBAL_ACTION_BACK)`）、`home()`（`performGlobalAction(GLOBAL_ACTION_HOME)`）。
+  - `longClick`/`scroll`はclickと同じ安全契約を踏襲する: snapshotId一致確認・fingerprint照合による`STALE_SNAPSHOT`、存在しないnodeIdは`NOT_FOUND`、成功後は既存`AndroidActionExecutor`と同じ「1操作→1回の必ず成功する再観測（fresh observation）」原則を適用する。`scroll`は`node.scrollable`が`false`の場合は`NOT_FOUND`または専用ステータスで拒絶し、スクロール不可ノードへの誤操作を防ぐ。
+  - `back()`/`home()`はノードに紐づかないグローバル操作のため、snapshotId/nodeIdを取らない。ただし「1操作→1回の必ず成功する再観測」原則は維持し、実行後に`UiSnapshotEngine.capture()`でfresh snapshotを取得して返す（click/longClick/scrollと同じ`ToolResult`形状に合わせる。previousSnapshotIdは呼び出し時点の`UiSnapshotEngine.currentSnapshot`を使う）。
+  - 今回は含めない: `setText`（テキスト入力はpassword redactionや個人情報の扱いが絡み、別途安全設計の検討が必要。M3以降の候補）、`screenshot`（生画像を返すことになり「raw objectを公開しない」というM1の設計原則と衝突するため別途レビューが必要）。
+  - レイヤー境界は維持: 新規ツールも`structured-tool-api`層に置き、`app`/`debug-harness`/Compose/Viewへ依存しない。`UiSnapshotEngine.kt`・`core-model`配下の既存モデルは、新しいAndroidActionExecutor側のメソッド（`longClick`/`scroll`/`back`/`home`）を追加する分だけ変更が必要（M1と異なりここは変更対象。ただし既存の`click`メソッドと`resolve()`・stale判定・password redaction・fresh observationの既存ロジック自体は変更しない、追加のみ）。
+- 対象ファイル（ファイル所有権宣言。着手中は他のAIはこれらを編集しない）:
+  - 変更: `android-actions/src/main/java/dev/rancher/android/actions/AndroidActionExecutor.kt`（`longClick`/`scroll`/`back`/`home`メソッド追加。既存`click`は変更しない）、対応する新規/既存テスト（`android-actions/src/test/java/dev/rancher/android/actions/AndroidActionExecutorTest.kt`）
+  - 変更: `structured-tool-api/src/main/java/dev/rancher/tool/api/StructuredToolApi.kt`（インターフェースへ4メソッド追加、`tools`カタログに4件追加）、`ToolDefinition.kt`（必要なら入出力スキーマ拡張）、`AndroidStructuredToolApi.kt`（4メソッドの委譲実装）、対応する新規テスト`structured-tool-api/src/test/java/dev/rancher/tool/api/StructuredToolApiTest.kt`
+  - 変更: `docs/M1_STRUCTURED_TOOL_API.md`→内容をM2向けに更新するか`docs/M2_TOOL_EXPANSION.md`を新規作成（どちらか一方、Gemini分解時に決定）、`README.md`のツール一覧更新
+  - 変更: `app/src/main/java/dev/rancher/app/DebugOverlayController.kt`、`debug-harness/src/main/java/dev/rancher/debug/harness/RancherDevHarnessScreen.kt`（新ツールを呼び出すUIボタンを追加する場合のみ。UI追加が任意ならWave分けで後回しにしてよい）
+  - 原則として変更しない: `UiSnapshotEngine.kt`（capture/stale判定ロジック）、`core-model`配下の`UiNode.kt`/`UiSnapshot.kt`（既存フィールドで十分。`ToolResult.kt`/`ToolStatus`は新ステータスが必要な場合のみ追加可）
+
+### 目的（M2）
+Structured Tool APIが公開するツールを`observe`/`click`の2件から、`longClick`/`scroll`/`back`/`home`を加えた6件に拡張する。既存のstale snapshot保護・fingerprint照合・fresh observation・password redactionの安全原則を、新ツールにも同じ厳密さで適用する。
+
+### 利用者（M2）
+M1と同じ。将来のAI Agent層が主な利用者。M2時点ではDebug Overlay/Developer Harnessが検証用呼び出し元となる。
+
+### 対象外（M2）
+`setText`、`screenshot`、AI Agent本体/Planner/Policy・Safety Layer、LLM/Function Calling統合、HTTP/WebSocket/JSON-RPC/MCP等ネットワーク越し呼び出し、`AccessibilityNodeInfo`等生オブジェクトの公開、coordinate tap/ADB/shellの操作方式追加、既存の`click`/`observe`の挙動変更。
+
+### 受入条件（M2、すべて実行結果で確認。静的解析のみでのPASS禁止）
+- [ ] `StructuredToolApi.tools`に`longClick`/`scroll`/`back`/`home`が追加され、既存`observe`/`click`と合わせて6件になる
+- [ ] `longClick`/`scroll`は`click`と同じstale snapshot保護（snapshotId不一致・fingerprint不一致→`STALE_SNAPSHOT`）、存在しないnodeIdは`NOT_FOUND`
+- [ ] `scroll`は対象ノードの`scrollable`が`false`の場合、スクロールを実行せず安全に拒絶する
+- [ ] `longClick`は`ACTION_LONG_CLICK`のみ、`scroll`は`ACTION_SCROLL_FORWARD`/`ACTION_SCROLL_BACKWARD`のみを使用（coordinate tap等の代替なし）
+- [ ] `back`/`home`は`performGlobalAction`のみを使用し、対象ノードを持たない
+- [ ] 4ツールとも成功後は既存`AndroidActionExecutor`と同じfresh observationを行い、previousSnapshotId一致・newSnapshotId非null・不一致を確認
+- [ ] fresh snapshot取得失敗時は既存どおり`FAILED`/`TIMEOUT`
+- [ ] 4ツールいずれもEmulatorまたは実機でAndroid Settings対象に成功を確認（observe→操作→fresh snapshotのフロー）
+- [ ] 既存`UiSnapshotEngineTest`/`AndroidActionExecutorTest`/`StructuredToolApiTest`/`SchemaDefinitionTest`含む関連単体テストが全PASS、かつ新規4ツールの単体テスト（成功・stale・not found・グローバル操作の3ケース）もPASS
+- [ ] `.\gradlew.bat test`および`.\gradlew.bat assembleDebug`成功
+- [ ] READMEまたはM2文書に4ツールの入出力スキーマ・対象外を記載
+- [ ] リポジトリにAI Agent/Policy実装/LLM SDK/HTTPサーバー/MCPサーバー用依存が追加されていない
+
+- 次の行動: Geminiが作業単位（WU）へ分解（Claudeが軽く確認）→ Kimi/Antigravityが実装（TDD）。
 
 ## 目的
 Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSnapshotへ変換し、Debug Harnessでactionable nodeを確認し、Android Settingsの「Connected devices」をsemantic node ID経由でCLICKし、遷移後に新しいUiSnapshotを生成する一連の流れ）を、コードレビューだけでなく実際にビルド・install・起動・操作して証明する。静的解析のみでの「成功」判定は禁止。
