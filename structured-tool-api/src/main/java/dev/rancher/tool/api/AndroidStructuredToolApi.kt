@@ -60,4 +60,15 @@ class AndroidStructuredToolApi(
         // 判定も既存エンジンのまま透過的に返す。
         return clickExecutor(snapshotId, nodeId)
     }
+
+    // WU-3: StructuredToolApi インターフェース拡張に伴うコンパイル通過用の
+    // ダミー実装。実際の委譲ロジックは WU-4 で実装する。
+    override suspend fun longClick(snapshotId: String, nodeId: Int): ToolResult = TODO("WU-4")
+
+    override suspend fun scroll(snapshotId: String, nodeId: Int, direction: String): ToolResult =
+        TODO("WU-4")
+
+    override suspend fun back(): ToolResult = TODO("WU-4")
+
+    override suspend fun home(): ToolResult = TODO("WU-4")
 }

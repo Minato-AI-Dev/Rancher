@@ -14,10 +14,18 @@ interface StructuredToolApi {
 
     suspend fun click(snapshotId: String, nodeId: Int): ToolResult
 
+    suspend fun longClick(snapshotId: String, nodeId: Int): ToolResult
+
+    suspend fun scroll(snapshotId: String, nodeId: Int, direction: String): ToolResult
+
+    suspend fun back(): ToolResult
+
+    suspend fun home(): ToolResult
+
     companion object {
         /**
-         * Programmatic catalog of all tools exposed by this API. M1 exposes exactly
-         * `observe` and `click`; no other tools are registered.
+         * Programmatic catalog of all tools exposed by this API. M2 exposes
+         * `observe`, `click`, `longClick`, `scroll`, `back`, and `home`.
          */
         val tools: List<ToolDefinition> = listOf(
             ToolDefinition(
@@ -38,6 +46,61 @@ interface StructuredToolApi {
                     "snapshotId" to "String (non-empty)",
                     "nodeId" to "Int (positive)",
                 ),
+                outputSchema = mapOf(
+                    "status" to "ToolStatus",
+                    "message" to "String?",
+                    "previousSnapshotId" to "String?",
+                    "newSnapshotId" to "String?",
+                    "durationMs" to "Long",
+                ),
+            ),
+            ToolDefinition(
+                name = "longClick",
+                description = "Perform ACTION_LONG_CLICK on the node identified by snapshotId and nodeId.",
+                inputSchema = mapOf(
+                    "snapshotId" to "String (non-empty)",
+                    "nodeId" to "Int (positive)",
+                ),
+                outputSchema = mapOf(
+                    "status" to "ToolStatus",
+                    "message" to "String?",
+                    "previousSnapshotId" to "String?",
+                    "newSnapshotId" to "String?",
+                    "durationMs" to "Long",
+                ),
+            ),
+            ToolDefinition(
+                name = "scroll",
+                description = "Scroll the node identified by snapshotId and nodeId in the given direction.",
+                inputSchema = mapOf(
+                    "snapshotId" to "String (non-empty)",
+                    "nodeId" to "Int (positive)",
+                    "direction" to "String ('forward' | 'backward')",
+                ),
+                outputSchema = mapOf(
+                    "status" to "ToolStatus",
+                    "message" to "String?",
+                    "previousSnapshotId" to "String?",
+                    "newSnapshotId" to "String?",
+                    "durationMs" to "Long",
+                ),
+            ),
+            ToolDefinition(
+                name = "back",
+                description = "Press the system BACK button via performGlobalAction(GLOBAL_ACTION_BACK).",
+                inputSchema = emptyMap(),
+                outputSchema = mapOf(
+                    "status" to "ToolStatus",
+                    "message" to "String?",
+                    "previousSnapshotId" to "String?",
+                    "newSnapshotId" to "String?",
+                    "durationMs" to "Long",
+                ),
+            ),
+            ToolDefinition(
+                name = "home",
+                description = "Press the system HOME button via performGlobalAction(GLOBAL_ACTION_HOME).",
+                inputSchema = emptyMap(),
                 outputSchema = mapOf(
                     "status" to "ToolStatus",
                     "message" to "String?",

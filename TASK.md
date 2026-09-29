@@ -1,6 +1,6 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU-1完了、WU-2完了、WU-3待ち）
+- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU-1完了、WU-2完了、WU-3完了、WU-4待ち）
 - 現在の担当: Kimi（WU-3から順次実装）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
@@ -333,6 +333,32 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
   - 実機確認（Xiaomi MIUI/Android 16, `fux8bevkxkdidat4`, model 25080RABDR, 2026-09-29 ユーザー操作・Claude記録）: `app-debug.apk`（HEAD `21178a3`）をインストールし、RancherAccessibilityServiceを有効化。M1 API経由でRancher Dev Harness→「M0 設定デモ」→Settings起動→オーバーレイ「更新」でobserve（`snap_000016`〜`snap_000017`, package=com.android.settings）。ユーザーがオーバーレイの`CLICK`ボタンを押下し、`RancherActions: CLICK snapshot=snap_000017 node=1 label=com.android.settings:id/header_view`（ACTION_CLICKのみ）を確認。直後に`RancherSnapshot: captured snap_000018 package=com.android.settings`。previousSnapshotId `snap_000017` ≠ newSnapshotId `snap_000018`、画面はSettings検索（検索履歴・キーボード表示）へ遷移。M1受入条件の「Android Settings対象にobserve→click→fresh snapshotがEmulatorまたは実機で成功」をEmulator（TASK.md 2026-09-28記載）に続き実機でも独立に満たした。
     - 補足（Claude作業メモ）: 実機はMIUIのバックグラウンド起動制限（`adb shell am start`が既存タスクへ配信されるのみで前面化しない）、およびAccessibilityServiceがforce-stop/トグルで切断されると`DebugOverlayController`の`rootView`がstaleのまま残り再表示に失敗する既知の再現性課題があった（コード上のバグではなくデバッグハーネス側の運用上の癖。`hide()`を挟めば復帰する）。この課題は本受入とは独立の運用メモとして扱い、コード修正は行っていない。
 
+- M2 ツール拡張 WU-3（Structured Tool API インターフェース拡張、2026-09-29・担当Kimi）:
+  - 実行環境: OS: Windows 11 Home (amd64) / JDK: OpenJDK 21.0.10 (LTS) / Gradle: 9.6.0 / AGP: 9.4.0 / Kotlin: 2.4.20
+  - TDD Red確認:
+    - コマンド: `.\gradlew.bat :structured-tool-api:testDebugUnitTest --tests "dev.rancher.tool.api.SchemaDefinitionTest"`
+    - 結果: `SchemaDefinitionTest` 7件中5件失敗（Red確認）。`structuredToolApi_contractHasSixTools`（期待6件、実際2件）、`longClickToolDefinition_hasExpectedSchema`、`scrollToolDefinition_hasExpectedSchema`、`backToolDefinition_hasExpectedSchema`、`homeToolDefinition_hasExpectedSchema` が `AssertionError`。既存2件（`toolDefinition_hasExpectedFields`、`observeToolResult_hasExpectedSchemaFields`）はPASS。
+    - 補足: `StructuredToolApi.kt` の `tools` カタログはまだ2件（observe/click）のまま。新規4ツールのインターフェースメソッドも未追加。
+  - インターフェース拡張に伴うコンパイルエラー確認:
+    - コマンド: `.\gradlew.bat :structured-tool-api:compileDebugKotlin`
+    - 結果: `AndroidStructuredToolApi.kt` で `ABSTRACT_MEMBER_NOT_IMPLEMENTED` コンパイルエラー。`longClick`/`scroll`/`back`/`home` の4メソッドが未実装のため。
+  - TDD Green確認:
+    - コマンド: `.\gradlew.bat :structured-tool-api:testDebugUnitTest`
+    - 結果: BUILD SUCCESSFUL。`SchemaDefinitionTest` 8件全PASS（新規5件 + 既存2件 + `toolDefinition_hasExpectedFields`）。`StructuredToolApiTest` 10件全PASS。合計18件（failures=0, errors=0）。
+      - 新規 `SchemaDefinitionTest` テスト内容:
+        - `structuredToolApi_contractHasSixTools`: カタログが6件（observe/click/longClick/scroll/back/home）であることを検証。
+        - `longClickToolDefinition_hasExpectedSchema`: `snapshotId`/`nodeId` を入力必須、出力は click と同じ `ToolStatus`/message/previousSnapshotId/newSnapshotId/durationMs 形状。
+        - `scrollToolDefinition_hasExpectedSchema`: `snapshotId`/`nodeId`/`direction`（'forward' | 'backward'）を入力必須、出力形状も同上。
+        - `backToolDefinition_hasExpectedSchema`: 入力なし、出力形状は同上。
+        - `homeToolDefinition_hasExpectedSchema`: 入力なし、出力形状は同上。
+      - `StructuredToolApiTest.tools_catalogContainsExactlySixTools`: M1からの既存テストをM2の6件カタログ仕様に合わせて更新。6件存在・各ツールのinputSchemaキー存在を検証。
+  - 回帰確認:
+    - コマンド: `.\gradlew.bat test`
+    - 結果: BUILD SUCCESSFUL。全モジュール単体テストPASS（android-actions 26件、android-snapshot 6件、structured-tool-api 18件、合計50件）。
+    - コマンド: `.\gradlew.bat assembleDebug`
+    - 結果: BUILD SUCCESSFUL（210 actionable tasks、app-debug.apk生成まで確認）。
+  - 補足: `AndroidStructuredToolApi.kt` には WU-4 で実装する4メソッドのダミー実装（`TODO("WU-4")`）を最小限追加。既存 `observe`/`click` 実装ロジックは一切変更しない。`ToolDefinition.kt` は既存定義で十分であり変更不要。
+
 ## 引き継ぎメモ
 - 完了事項:
   - 追加タスク（2026-09-24）: クリック後の自動再観測が実機で発火しない不具合を修正。
@@ -374,6 +400,16 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
     - 成功後は `observeAfterGlobalAction` で1操作→1回の必ず成功する再観測を実施。fresh capture失敗時は `FAILED`/`TIMEOUT` を透過。
     - `AndroidActionExecutorTest.kt` に back/home のグローバル操作実行・fresh observation・fresh capture失敗（TIMEOUT/FAILED）・未接続・global action拒否テストを追加。テスト用seam `performGlobalActionForTesting` を追加。
     - TDD Red→Green証跡を記録。`AndroidActionExecutorTest` 26件全PASS（既存click 2件 + longClick 6件 + scroll 8件 + back 5件 + home 5件）。`.\gradlew.bat test` 全モジュールPASS、`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL。
-  - M2 WU-3: Structured Tool API 層のインターフェース拡張 — `StructuredToolApi.kt` に `longClick`/`scroll`/`back`/`home` の4メソッドを追加し、`tools` カタログを6件化。`ToolDefinition.kt` で必要な入出力スキーマ拡張。対象ファイルは `structured-tool-api/src/main/java/dev/rancher/tool/api/StructuredToolApi.kt`、`ToolDefinition.kt`、および対応するテスト `StructuredToolApiTest.kt` / `SchemaDefinitionTest.kt`。WU-2完了後に着手。
-- 次の担当者: Kimi（M2 WU-3: Structured Tool API インターフェース拡張）
-- 次の行動: WU-3 をTDD Red→Greenで実装し、`structured-tool-api` のテストが全PASSすることを確認。完了後はCodex品質ゲートレビューへ。
+- 2026-09-29 Kimi（M2 ツール拡張 WU-3: Structured Tool API インターフェース拡張）:
+  1. WU-2完了後に着手。対象ファイルは `StructuredToolApi.kt`、`ToolDefinition.kt`、`SchemaDefinitionTest.kt`、`TASK.md` のみ（`AndroidStructuredToolApi.kt` は対象外だが、インターフェース拡張に伴うコンパイルエラーを解消するため最小限のダミー実装を追加）。
+  2. TDD Red: `SchemaDefinitionTest.kt` に6件カタログ検証（`structuredToolApi_contractHasSixTools`）および新規4ツール（`longClick`/`scroll`/`back`/`home`）の入出力スキーマ検証テストを追加。`StructuredToolApi.kt` の `tools` カタログはまだ2件のままなので、`.\gradlew.bat :structured-tool-api:testDebugUnitTest --tests "dev.rancher.tool.api.SchemaDefinitionTest"` で7テスト中5テストが失敗（Red確認）。
+  3. TDD Green: `StructuredToolApi.kt` のインターフェースに `longClick`/`scroll`/`back`/`home` の4メソッドを追加。`tools` カタログに4件追加し、既存 `observe`/`click` と合わせて6件化。入出力スキーマを明確に記述（`longClick`/`scroll` は `snapshotId`/`nodeId` 必須、`scroll` はさらに `direction` 必須、`back`/`home` は引数なし）。
+  4. インターフェース拡張により `AndroidStructuredToolApi.kt` がコンパイルエラー（`ABSTRACT_MEMBER_NOT_IMPLEMENTED`）になったため、対象外ファイルだがコンパイル通過用に4メソッドのダミー実装（`TODO("WU-4")`）を最小限追加。既存 `observe`/`click` 実装ロジックは一切変更しない。
+  5. `StructuredToolApiTest.kt` の `tools_catalogContainsExactlyObserveAndClick` テストが、M2の6件カタログ仕様に合わなくなったため、テスト名を `tools_catalogContainsExactlySixTools` に変更し、6件存在・各ツールのinputSchemaキー存在を検証するよう更新。これはM2受入条件「`StructuredToolApi.tools` に4ツールが追加され計6件になる」を満たすための必要最小限の既存テスト修正。
+  6. `ToolDefinition.kt` は既存定義で十分であり、変更不要。
+  7. TDD Green確認: `.\gradlew.bat :structured-tool-api:testDebugUnitTest` BUILD SUCCESSFUL。`SchemaDefinitionTest` 8件全PASS、`StructuredToolApiTest` 10件全PASS、合計18件（failures=0, errors=0）。
+  8. 回帰確認: `.\gradlew.bat test` BUILD SUCCESSFUL（全モジュール単体テストPASS。android-actions 26件、android-snapshot 6件、structured-tool-api 18件）。`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL（210 actionable tasks、app-debug.apk生成まで確認）。
+
+- M2 WU-4: `AndroidStructuredToolApi.kt` への4ツール委譲実装 + `StructuredToolApiTest.kt` への契約テスト追加（委譲回数==1、SUCCESS/STALE_SNAPSHOT/NOT_FOUND/NOT_SCROLLABLE/FAILED/TIMEOUT透過）。WU-3完了後に着手。
+- 次の担当者: Kimi（M2 WU-4: Structured Tool API 委譲実装）
+- 次の行動: WU-4 をTDD Red→Greenで実装し、`structured-tool-api` のテストが全PASSすることを確認。完了後はCodex品質ゲートレビューへ。

@@ -177,10 +177,15 @@ class StructuredToolApiTest {
     }
 
     @Test
-    fun tools_catalogContainsExactlyObserveAndClick() {
-        assertEquals(2, StructuredToolApi.tools.size)
+    fun tools_catalogContainsExactlySixTools() {
+        // M2 ツール拡張により、カタログは observe/click/longClick/scroll/back/home の6件になる。
+        assertEquals(6, StructuredToolApi.tools.size)
         assertNotNull(StructuredToolApi.tools.find { it.name == "observe" })
         assertNotNull(StructuredToolApi.tools.find { it.name == "click" })
+        assertNotNull(StructuredToolApi.tools.find { it.name == "longClick" })
+        assertNotNull(StructuredToolApi.tools.find { it.name == "scroll" })
+        assertNotNull(StructuredToolApi.tools.find { it.name == "back" })
+        assertNotNull(StructuredToolApi.tools.find { it.name == "home" })
 
         val observe = StructuredToolApi.tools.first { it.name == "observe" }
         assertTrue(observe.outputSchema.containsKey("status"))
@@ -191,6 +196,21 @@ class StructuredToolApiTest {
         val click = StructuredToolApi.tools.first { it.name == "click" }
         assertTrue(click.inputSchema.containsKey("snapshotId"))
         assertTrue(click.inputSchema.containsKey("nodeId"))
+
+        val longClick = StructuredToolApi.tools.first { it.name == "longClick" }
+        assertTrue(longClick.inputSchema.containsKey("snapshotId"))
+        assertTrue(longClick.inputSchema.containsKey("nodeId"))
+
+        val scroll = StructuredToolApi.tools.first { it.name == "scroll" }
+        assertTrue(scroll.inputSchema.containsKey("snapshotId"))
+        assertTrue(scroll.inputSchema.containsKey("nodeId"))
+        assertTrue(scroll.inputSchema.containsKey("direction"))
+
+        val back = StructuredToolApi.tools.first { it.name == "back" }
+        assertEquals(emptyMap<String, String>(), back.inputSchema)
+
+        val home = StructuredToolApi.tools.first { it.name == "home" }
+        assertEquals(emptyMap<String, String>(), home.inputSchema)
     }
 
     @Test

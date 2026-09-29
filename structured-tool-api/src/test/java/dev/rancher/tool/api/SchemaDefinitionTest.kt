@@ -55,10 +55,115 @@ class SchemaDefinitionTest {
     }
 
     @Test
-    fun structuredToolApi_contractHasTwoTools() {
-        // The public API exposes exactly two tools: observe and click.
-        assertEquals(2, StructuredToolApi.tools.size)
+    fun structuredToolApi_contractHasSixTools() {
+        // The public API exposes exactly six tools: observe, click, longClick, scroll, back, and home.
+        assertEquals(6, StructuredToolApi.tools.size)
         assertNotNull(StructuredToolApi.tools.find { it.name == "observe" })
         assertNotNull(StructuredToolApi.tools.find { it.name == "click" })
+        assertNotNull(StructuredToolApi.tools.find { it.name == "longClick" })
+        assertNotNull(StructuredToolApi.tools.find { it.name == "scroll" })
+        assertNotNull(StructuredToolApi.tools.find { it.name == "back" })
+        assertNotNull(StructuredToolApi.tools.find { it.name == "home" })
+    }
+
+    @Test
+    fun longClickToolDefinition_hasExpectedSchema() {
+        val definition = StructuredToolApi.tools.find { it.name == "longClick" }
+            ?: throw AssertionError("longClick tool not found")
+
+        assertEquals(
+            "Perform ACTION_LONG_CLICK on the node identified by snapshotId and nodeId.",
+            definition.description,
+        )
+        assertEquals(
+            mapOf(
+                "snapshotId" to "String (non-empty)",
+                "nodeId" to "Int (positive)",
+            ),
+            definition.inputSchema,
+        )
+        assertEquals(
+            mapOf(
+                "status" to "ToolStatus",
+                "message" to "String?",
+                "previousSnapshotId" to "String?",
+                "newSnapshotId" to "String?",
+                "durationMs" to "Long",
+            ),
+            definition.outputSchema,
+        )
+    }
+
+    @Test
+    fun scrollToolDefinition_hasExpectedSchema() {
+        val definition = StructuredToolApi.tools.find { it.name == "scroll" }
+            ?: throw AssertionError("scroll tool not found")
+
+        assertEquals(
+            "Scroll the node identified by snapshotId and nodeId in the given direction.",
+            definition.description,
+        )
+        assertEquals(
+            mapOf(
+                "snapshotId" to "String (non-empty)",
+                "nodeId" to "Int (positive)",
+                "direction" to "String ('forward' | 'backward')",
+            ),
+            definition.inputSchema,
+        )
+        assertEquals(
+            mapOf(
+                "status" to "ToolStatus",
+                "message" to "String?",
+                "previousSnapshotId" to "String?",
+                "newSnapshotId" to "String?",
+                "durationMs" to "Long",
+            ),
+            definition.outputSchema,
+        )
+    }
+
+    @Test
+    fun backToolDefinition_hasExpectedSchema() {
+        val definition = StructuredToolApi.tools.find { it.name == "back" }
+            ?: throw AssertionError("back tool not found")
+
+        assertEquals(
+            "Press the system BACK button via performGlobalAction(GLOBAL_ACTION_BACK).",
+            definition.description,
+        )
+        assertEquals(emptyMap<String, String>(), definition.inputSchema)
+        assertEquals(
+            mapOf(
+                "status" to "ToolStatus",
+                "message" to "String?",
+                "previousSnapshotId" to "String?",
+                "newSnapshotId" to "String?",
+                "durationMs" to "Long",
+            ),
+            definition.outputSchema,
+        )
+    }
+
+    @Test
+    fun homeToolDefinition_hasExpectedSchema() {
+        val definition = StructuredToolApi.tools.find { it.name == "home" }
+            ?: throw AssertionError("home tool not found")
+
+        assertEquals(
+            "Press the system HOME button via performGlobalAction(GLOBAL_ACTION_HOME).",
+            definition.description,
+        )
+        assertEquals(emptyMap<String, String>(), definition.inputSchema)
+        assertEquals(
+            mapOf(
+                "status" to "ToolStatus",
+                "message" to "String?",
+                "previousSnapshotId" to "String?",
+                "newSnapshotId" to "String?",
+                "durationMs" to "Long",
+            ),
+            definition.outputSchema,
+        )
     }
 }
