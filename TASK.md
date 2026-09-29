@@ -1,7 +1,7 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 依頼（M2: ツール拡張 longClick/scroll/back/home — 仕様確定、Gemini分解待ち）
-- 現在の担当: Gemini（作業単位分解）
+- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU分解完了、Kimi実装中）
+- 現在の担当: Kimi（WU-1から順次実装）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
 - 更新日: 2026-09-29
@@ -78,6 +78,7 @@ Kimiへは各WUをファイル所有権宣言に従い順に実装させ、WUご
   - レイヤー境界は維持: 新規ツールも`structured-tool-api`層に置き、`app`/`debug-harness`/Compose/Viewへ依存しない。`UiSnapshotEngine.kt`・`core-model`配下の既存モデルは、新しいAndroidActionExecutor側のメソッド（`longClick`/`scroll`/`back`/`home`）を追加する分だけ変更が必要（M1と異なりここは変更対象。ただし既存の`click`メソッドと`resolve()`・stale判定・password redaction・fresh observationの既存ロジック自体は変更しない、追加のみ）。
 - 対象ファイル（ファイル所有権宣言。着手中は他のAIはこれらを編集しない）:
   - 変更: `android-actions/src/main/java/dev/rancher/android/actions/AndroidActionExecutor.kt`（`longClick`/`scroll`/`back`/`home`メソッド追加。既存`click`は変更しない）、対応する新規/既存テスト（`android-actions/src/test/java/dev/rancher/android/actions/AndroidActionExecutorTest.kt`）
+  - 変更: `core-model/src/main/java/dev/rancher/core/model/ToolResult.kt`（`ToolStatus`へ`NOT_SCROLLABLE`を追加。既存ステータス・既存フィールドは変更しない。Gemini分解案WU-1にて特定）
   - 変更: `structured-tool-api/src/main/java/dev/rancher/tool/api/StructuredToolApi.kt`（インターフェースへ4メソッド追加、`tools`カタログに4件追加）、`ToolDefinition.kt`（必要なら入出力スキーマ拡張）、`AndroidStructuredToolApi.kt`（4メソッドの委譲実装）、対応する新規テスト`structured-tool-api/src/test/java/dev/rancher/tool/api/StructuredToolApiTest.kt`
   - 変更: `docs/M1_STRUCTURED_TOOL_API.md`→内容をM2向けに更新するか`docs/M2_TOOL_EXPANSION.md`を新規作成（どちらか一方、Gemini分解時に決定）、`README.md`のツール一覧更新
   - 変更: `app/src/main/java/dev/rancher/app/DebugOverlayController.kt`、`debug-harness/src/main/java/dev/rancher/debug/harness/RancherDevHarnessScreen.kt`（新ツールを呼び出すUIボタンを追加する場合のみ。UI追加が任意ならWave分けで後回しにしてよい）
@@ -106,7 +107,23 @@ M1と同じ。将来のAI Agent層が主な利用者。M2時点ではDebug Overl
 - [ ] READMEまたはM2文書に4ツールの入出力スキーマ・対象外を記載
 - [ ] リポジトリにAI Agent/Policy実装/LLM SDK/HTTPサーバー/MCPサーバー用依存が追加されていない
 
-- 次の行動: Geminiが作業単位（WU）へ分解（Claudeが軽く確認）→ Kimi/Antigravityが実装（TDD）。
+- 次の行動: Kimiが作業単位（WU）を順に実装（TDD）→ 完了後Codex品質ゲートレビュー。
+
+### 作業単位（WU）分解（Gemini案、Claude軽く確認済み・矛盾なし、2026-09-29）
+**Wave 1（Android Control Engine層、依存順次）**
+- WU-1: `longClick`/`scroll`実装＋テスト — 変更`AndroidActionExecutor.kt`（`longClick`/`scroll`追加）、`ToolResult.kt`（`ToolStatus.NOT_SCROLLABLE`追加）、`AndroidActionExecutorTest.kt`。TDD Red→Green: stale snapshot不一致・NOT_FOUND・`node.scrollable==false`時の`NOT_SCROLLABLE`拒否・正常系（fresh observation含む）、**および今回追加：fresh capture失敗時のFAILED/TIMEOUT透過テスト（M2受入条件に明記されているため必須）**。受入: `.\gradlew.bat :android-actions:testDebugUnitTest`全PASS。
+- WU-2: `back`/`home`実装＋テスト — 変更`AndroidActionExecutor.kt`（`back`/`home`追加、`performGlobalAction`のみ使用）、`AndroidActionExecutorTest.kt`。前提: WU-1完了後（同一ファイル継続編集のため）。TDD Red→Green: グローバル操作実行→fresh observation→previousSnapshotId/newSnapshotId検証、**および今回追加：fresh capture失敗時のFAILED/TIMEOUT透過テスト**。受入: `.\gradlew.bat :android-actions:testDebugUnitTest`全PASS。
+
+**Wave 2（Structured Tool API層、Wave1完了後）**
+- WU-3: インターフェース・スキーマ拡張 — 変更`StructuredToolApi.kt`（4メソッド追加、`tools`カタログ6件化）、`SchemaDefinitionTest.kt`。受入: `:structured-tool-api:testDebugUnitTest`でスキーマテストPASS。
+- WU-4: 委譲実装＋契約テスト — 変更`AndroidStructuredToolApi.kt`（4メソッド委譲配線）、`StructuredToolApiTest.kt`（委譲回数==1、SUCCESS/STALE_SNAPSHOT/NOT_FOUND/NOT_SCROLLABLE/FAILED/TIMEOUT透過検証）。前提: WU-3完了後。受入: `:structured-tool-api:test`全PASS。
+
+**Wave 3（UI統合＋ドキュメント、Wave2完了後、並行可）**
+- WU-5（任意）: Overlay/Harness統合 — 変更`app/DebugOverlayController.kt`、`debug-harness/RancherDevHarnessScreen.kt`（4ツールのボタン追加、呼び出し切替のみ）。前提: WU-4完了後。受入: `.\gradlew.bat assembleDebug`成功。
+- WU-6: ドキュメント整備 — 新規`docs/M2_TOOL_EXPANSION.md`、変更`README.md`（ツール一覧6件に更新）。前提: WU-4完了後（WU-5と並行可）。受入: 全体`.\gradlew.bat test`/`assembleDebug`成功。
+- **WU-5後の確認工程（どのWUにも属さない、Kimi実装完了後にClaudeが実施）**: M1の「指摘1対応」と同様に、Emulatorまたは実機で4ツール（`longClick`/`scroll`/`back`/`home`）それぞれについてobserve→操作→fresh snapshotの成功をログ・スクリーンショットで確認し、TASK.mdテスト結果へ記録する。これを欠くと受入条件「4ツールいずれもEmulatorまたは実機で成功を確認」を満たせない。
+
+Kimiへは各WUをファイル所有権宣言に従い順に実装させ、WUごとに1コミット・TDD Red→Greenを徹底させる。Kimi残高確認済み（2026-09-29時点 19.5、下限1以上）。
 
 ## 目的
 Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSnapshotへ変換し、Debug Harnessでactionable nodeを確認し、Android Settingsの「Connected devices」をsemantic node ID経由でCLICKし、遷移後に新しいUiSnapshotを生成する一連の流れ）を、コードレビューだけでなく実際にビルド・install・起動・操作して証明する。静的解析のみでの「成功」判定は禁止。
