@@ -229,6 +229,8 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
     - fresh snapshot: 直後に`captured snap_000007 package=com.android.settings`。previousSnapshotId `snap_000006` ≠ newSnapshotId `snap_000007`。画面は「Search settings」検索画面へ遷移したことをスクリーンショットで確認。
     - 観察事項（M1対象外・既存M0挙動）: クリック直後のfresh snapshot（snap_000007）はsemanticNodes=33/rawNodes=73と遷移前と同数で、Overlayに旧画面のノードが残って表示された。画面遷移アニメーション完了前に再取得している可能性があり、将来課題として`.memory/knowledge/`へ記録推奨（M1の受入条件はID不一致・非nullで満たす）。
     - 補足: エミュレータ起動直後は「System UI isn't responding」が出たため`Wait`で待機してから実施。adbは検証操作（入力・ログ取得）にのみ使用し、Rancher本体の操作方式には使っていない。
+  - 実機確認（Xiaomi MIUI/Android 16, `fux8bevkxkdidat4`, model 25080RABDR, 2026-09-29 ユーザー操作・Claude記録）: `app-debug.apk`（HEAD `21178a3`）をインストールし、RancherAccessibilityServiceを有効化。M1 API経由でRancher Dev Harness→「M0 設定デモ」→Settings起動→オーバーレイ「更新」でobserve（`snap_000016`〜`snap_000017`, package=com.android.settings）。ユーザーがオーバーレイの`CLICK`ボタンを押下し、`RancherActions: CLICK snapshot=snap_000017 node=1 label=com.android.settings:id/header_view`（ACTION_CLICKのみ）を確認。直後に`RancherSnapshot: captured snap_000018 package=com.android.settings`。previousSnapshotId `snap_000017` ≠ newSnapshotId `snap_000018`、画面はSettings検索（検索履歴・キーボード表示）へ遷移。M1受入条件の「Android Settings対象にobserve→click→fresh snapshotがEmulatorまたは実機で成功」をEmulator（TASK.md 2026-09-28記載）に続き実機でも独立に満たした。
+    - 補足（Claude作業メモ）: 実機はMIUIのバックグラウンド起動制限（`adb shell am start`が既存タスクへ配信されるのみで前面化しない）、およびAccessibilityServiceがforce-stop/トグルで切断されると`DebugOverlayController`の`rootView`がstaleのまま残り再表示に失敗する既知の再現性課題があった（コード上のバグではなくデバッグハーネス側の運用上の癖。`hide()`を挟めば復帰する）。この課題は本受入とは独立の運用メモとして扱い、コード修正は行っていない。
 
 ## 引き継ぎメモ
 - 完了事項:
