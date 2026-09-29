@@ -109,6 +109,26 @@ fun RancherDevHarnessScreen(
                 OutlinedButton(onClick = onStopOverlay) {
                     Text(stringResource(R.string.button_hide_overlay))
                 }
+                OutlinedButton(
+                    enabled = service != null,
+                    onClick = {
+                        scope.launch {
+                            lastResult = api.back()
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.button_back))
+                }
+                OutlinedButton(
+                    enabled = service != null,
+                    onClick = {
+                        scope.launch {
+                            lastResult = api.home()
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.button_home))
+                }
             }
 
             Text(
@@ -207,6 +227,58 @@ private fun NodeCard(
                     },
                 ) {
                     Text(stringResource(if (busy) R.string.button_clicking else R.string.button_click))
+                }
+            }
+            if (node.longClickable) {
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    enabled = node.enabled && !busy,
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            try {
+                                onResult(api.longClick(snapshotId, node.id))
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                ) {
+                    Text(stringResource(if (busy) R.string.button_long_clicking else R.string.button_long_click))
+                }
+            }
+            if (node.scrollable) {
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    enabled = node.enabled && !busy,
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            try {
+                                onResult(api.scroll(snapshotId, node.id, "forward"))
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                ) {
+                    Text(stringResource(if (busy) R.string.button_scrolling_forward else R.string.button_scroll_forward))
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    enabled = node.enabled && !busy,
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            try {
+                                onResult(api.scroll(snapshotId, node.id, "backward"))
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                ) {
+                    Text(stringResource(if (busy) R.string.button_scrolling_backward else R.string.button_scroll_backward))
                 }
             }
         }

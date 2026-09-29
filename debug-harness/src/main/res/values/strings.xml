@@ -8,4 +8,12 @@
     <string name="text_no_snapshot">No semantic snapshot yet. Enable the service, then run the M0 Settings demo.</string>
     <string name="button_click">CLICK</string>
     <string name="button_clicking">CLICKING…</string>
+    <string name="button_long_click">LONG</string>
+    <string name="button_long_clicking">LONG…</string>
+    <string name="button_scroll_forward">SCROLL+</string>
+    <string name="button_scrolling_forward">SCROLLING+…</string>
+    <string name="button_scroll_backward">SCROLL-</string>
+    <string name="button_scrolling_backward">SCROLLING-…</string>
+    <string name="button_back">Back</string>
+    <string name="button_home">Home</string>
 </resources>

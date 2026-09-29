@@ -136,6 +136,24 @@ object DebugOverlayController {
             text = service.getString(R.string.button_close)
             setOnClickListener { hide() }
         })
+        controls.addView(Button(service).apply {
+            text = service.getString(R.string.button_back)
+            setOnClickListener {
+                scope?.launch {
+                    status = api.back()
+                    render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
+                }
+            }
+        })
+        controls.addView(Button(service).apply {
+            text = service.getString(R.string.button_home)
+            setOnClickListener {
+                scope?.launch {
+                    status = api.home()
+                    render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
+                }
+            }
+        })
         panel.addView(controls)
 
         status?.let { result ->
@@ -208,6 +226,43 @@ object DebugOverlayController {
                         isEnabled = false
                         scope?.launch {
                             status = api.click(snapshotId, node.id)
+                            render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
+                        }
+                    }
+                })
+            }
+            if (node.longClickable) {
+                addView(Button(service).apply {
+                    text = service.getString(R.string.button_long_click_node, node.id)
+                    isEnabled = node.enabled
+                    setOnClickListener {
+                        isEnabled = false
+                        scope?.launch {
+                            status = api.longClick(snapshotId, node.id)
+                            render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
+                        }
+                    }
+                })
+            }
+            if (node.scrollable) {
+                addView(Button(service).apply {
+                    text = service.getString(R.string.button_scroll_forward_node, node.id)
+                    isEnabled = node.enabled
+                    setOnClickListener {
+                        isEnabled = false
+                        scope?.launch {
+                            status = api.scroll(snapshotId, node.id, "forward")
+                            render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
+                        }
+                    }
+                })
+                addView(Button(service).apply {
+                    text = service.getString(R.string.button_scroll_backward_node, node.id)
+                    isEnabled = node.enabled
+                    setOnClickListener {
+                        isEnabled = false
+                        scope?.launch {
+                            status = api.scroll(snapshotId, node.id, "backward")
                             render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
                         }
                     }

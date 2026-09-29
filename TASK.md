@@ -1,6 +1,6 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU-1完了、WU-2完了、WU-3完了、WU-4完了、WU-6完了。WU-5進行中）
+- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU-1完了、WU-2完了、WU-3完了、WU-4完了、WU-5完了、WU-6完了）
 - 現在の担当: WU-6文書作成担当（完了）、WU-5は別担当
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
@@ -213,6 +213,23 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
   3. TDD Green: `AndroidActionExecutor.kt` に `back`/`home` を実装。`AccessibilityBridge.performGlobalAction(...)` という形で `AccessibilityService.GLOBAL_ACTION_BACK`/`GLOBAL_ACTION_HOME` のみを使用。snapshotId/nodeIdは取らず、呼び出し時点の `UiSnapshotEngine.currentSnapshot` を `previousSnapshotId` とする。成功後は `observeAfterGlobalAction` で1操作→1回の必ず成功する再観測を実施。previousSnapshotがnullの場合も `captureBridge()` でfresh snapshotを取得し、失敗時は `TIMEOUT` を返す。`.\gradlew.bat :android-actions:testDebugUnitTest` で26件全PASS、`.\gradlew.bat test` で全モジュールPASS、`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL。
   4. 実装上の補足: `AccessibilityBridge` に `performGlobalAction` メソッドが存在しなかったため、`AndroidActionExecutor.kt` 内で拡張関数として `private fun AccessibilityBridge.performGlobalAction(action: Int): Boolean` を追加。これによりタスク指定どおり `AccessibilityBridge.performGlobalAction(GLOBAL_ACTION_BACK/GLOBAL_ACTION_HOME)` の形で呼び出しつつ、`android-accessibility` モジュールへの変更を回避した。テスト用seam `performGlobalActionForTesting` を追加し、JVM単体テストでグローバル操作の呼び出し action 定数を検証可能にした。
 
+- 2026-09-29 Kimi（M2 ツール拡張 WU-5: Debug Overlay / Developer Harness UI統合）:
+  1. WU-4完了後に着手。対象ファイルは `app/src/main/java/dev/rancher/app/DebugOverlayController.kt`、`debug-harness/src/main/java/dev/rancher/debug/harness/RancherDevHarnessScreen.kt`、両モジュールの `strings.xml`、`TASK.md` のみ。
+  2. `DebugOverlayController.kt` に4ツールのUIトリガーを追加:
+     - オーバーレイ上部コントロール行に `Back` / `Home` ボタンを追加（グローバル操作、node選択不要）。
+     - 各node行の既存 `CLICK` ボタンの下に `LONG` / `SCROLL+` / `SCROLL-` ボタンを追加（`LONG` は `node.longClickable`、`SCROLL±` は `node.scrollable` がtrueの場合に表示）。
+     - 既存 `Refresh` / `CLICK` ボタンのロジック・配置・デザインは変更せず、ボタン追加のみ。
+     - 各ボタンは `AndroidStructuredToolApi` の対応メソッドを呼び出し、`ToolResult` を既存の `status` 表示領域に反映。
+  3. `RancherDevHarnessScreen.kt` に4ツールのUIトリガーを追加:
+     - トップ `FlowRow` に `Back` / `Home` ボタンを追加（`service != null` の場合のみ有効）。
+     - 各 `NodeCard` の既存 `CLICK` ボタンの下に `LONG` / `SCROLL+` / `SCROLL-` ボタンを追加（表示条件はOverlayと同じ）。
+     - 既存 `Refresh current window` / `CLICK` ボタンのロジック・配置・デザインは変更せず、ボタン追加のみ。
+     - 各ボタンは `AndroidStructuredToolApi` の対応メソッドを呼び出し、結果を `lastResult`（画面上部カード）に反映。
+  4. ビルド確認:
+     - コマンド: `.\gradlew.bat :app:assembleDebug` → BUILD SUCCESSFUL in 12s（144 actionable tasks: 23 executed, 121 up-to-date）。app-debug.apk 生成まで確認。
+     - コマンド: `.\gradlew.bat :debug-harness:assembleDebug` → BUILD SUCCESSFUL in 6s（68 actionable tasks: 3 executed, 65 up-to-date）。debug-harness AAR 生成まで確認。
+  5. 補足: `structured-tool-api` 配下、`android-actions` 配下、`android-snapshot` 配下、`core-model` 配下は一切変更せず、WU-1〜WU-4の実装を呼び出すのみ。
+
 - 2026-09-24 Kimi（追加タスク対応）:
   1. `TASK.md` の目的・アーキテクチャ不変条件・追加タスク（2026-09-24）・設計判断（2026-09-24 Claudeエントリ）を読み込み着手。
   2. TDD Red: `UiSnapshotEngineTest.kt` に `testRetry_returnsValueAfterTransientNulls` / `testRetry_returnsNullAfterAllAttemptsFail` を追加。`UiSnapshotEngine.retry(...)` が未実装のため `.\gradlew.bat :android-snapshot:testDebugUnitTest` が `Unresolved reference 'retry'` で失敗（Redを確認）。
@@ -382,7 +399,26 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
     - コマンド: `.\gradlew.bat assembleDebug`
     - 結果: BUILD SUCCESSFUL（210 actionable tasks、app-debug.apk生成まで確認）。
   - 補足: `AndroidStructuredToolApi.kt` の既存 `observe`/`click` 実装ロジックは一切変更しない。`AndroidActionExecutor.kt` は変更しない。`StructuredToolApiTest.kt` に追加した private `api(...)` ヘルパーは、未使用のexecutorが呼ばれた場合に即座にAssertionErrorを投げることで、誤った委譲を検知する。
-  - 未実施・次工程: Emulator/実機での4ツール動作確認はWU-5後の確認工程として未実施。
+- M2 ツール拡張 WU-5（Debug Overlay / Developer Harness UI統合、2026-09-29・担当Kimi）:
+  - 実行環境: OS: Windows 11 Home (amd64) / JDK: OpenJDK 21.0.10 (LTS) / Gradle: 9.6.0 / AGP: 9.4.0 / Kotlin: 2.4.20
+  - 実施内容:
+    - `app/src/main/java/dev/rancher/app/DebugOverlayController.kt` に4ツールのUIトリガーを追加:
+      - オーバーレイ上部コントロール行に `Back` / `Home` ボタンを追加（グローバル操作、node選択不要）。
+      - 各node行の既存 `CLICK` ボタンの下に、対象nodeIdに対する `LONG` / `SCROLL+` / `SCROLL-` ボタンを追加（`LONG` は `node.longClickable`、`SCROLL±` は `node.scrollable` がtrueの場合に表示）。
+      - 既存 `Refresh` / `CLICK` ボタンのロジック・配置・デザインは変更せず、ボタン追加のみ。
+      - 各ボタンは `AndroidStructuredToolApi` の `longClick` / `scroll` / `back` / `home` を呼び出し、`ToolResult` を既存の `status` 表示領域に反映。
+    - `debug-harness/src/main/java/dev/rancher/debug/harness/RancherDevHarnessScreen.kt` に4ツールのUIトリガーを追加:
+      - トップ `FlowRow` に `Back` / `Home` ボタンを追加（`service != null` の場合のみ有効）。
+      - 各 `NodeCard` の既存 `CLICK` ボタンの下に `LONG` / `SCROLL+` / `SCROLL-` ボタンを追加（表示条件はOverlayと同じ）。
+      - 既存 `Refresh current window` / `CLICK` ボタンのロジック・配置・デザインは変更せず、ボタン追加のみ。
+      - 各ボタンは `AndroidStructuredToolApi` の対応メソッドを呼び出し、結果を `lastResult`（画面上部カード）に反映。
+    - `app/src/main/res/values/strings.xml` と `debug-harness/src/main/res/values/strings.xml` に新規ボタン用文字列リソースを追加。
+  - ビルド確認:
+    - コマンド: `.\gradlew.bat :app:assembleDebug`
+    - 結果: BUILD SUCCESSFUL in 12s（144 actionable tasks: 23 executed, 121 up-to-date）。app-debug.apk 生成まで確認。
+    - コマンド: `.\gradlew.bat :debug-harness:assembleDebug`
+    - 結果: BUILD SUCCESSFUL in 6s（68 actionable tasks: 3 executed, 65 up-to-date）。debug-harness AAR 生成まで確認。
+  - 未実施・次工程: Emulator/実機での4ツール動作確認（longClick/scroll/back/home それぞれについて observe→操作→fresh snapshot の成功確認）は、WU-5後の確認工程としてClaudeが実施予定。
 
 ## 引き継ぎメモ
 - 完了事項:
@@ -409,6 +445,13 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
       - TDD Red→Green証跡を記録。`structured-tool-api` テスト14件（SchemaDefinitionTest 3件 + StructuredToolApiTest 11件）全PASS。
       - 全モジュール単体テスト22件全PASS、`assembleDebug` BUILD SUCCESSFUL。
       - `TASK.md` の `SchemaDefinitionTest` 件数記載および合計件数を実態に合わせて訂正。
+  - M2 ツール拡張 WU-5（Debug Overlay / Developer Harness UI統合、2026-09-29・担当Kimi）:
+    - `app/DebugOverlayController.kt` に `Back` / `Home` / `LONG` / `SCROLL+` / `SCROLL-` のUIトリガーを追加。`Back`/`Home` はグローバル操作、`LONG`/`SCROLL±` は対象nodeIdに対する操作。
+    - `debug-harness/src/main/java/dev/rancher/debug/harness/RancherDevHarnessScreen.kt` に同様の4ツールUIトリガーを追加。
+    - 既存 `Refresh` / `CLICK` ボタンのロジック・配置・デザインは変更せず、ボタン追加のみ。
+    - 各ボタンは `AndroidStructuredToolApi` の対応メソッドを呼び出し、結果を既存の `status` / `lastResult` 表示領域に反映。
+    - `app` / `debug-harness` の `strings.xml` に新規ボタン用文字列リソースを追加。
+    - `.\gradlew.bat :app:assembleDebug` および `.\gradlew.bat :debug-harness:assembleDebug` が BUILD SUCCESSFUL。
 - 未対応・次工程:
   - 実機（MIUI/Android 16）での再検証は未実施（Emulator/Pixel_8a 上の単体テスト・ビルド検証まで）。ユーザー指示により今回は省略、将来機会があれば実施。
   - 将来課題（`.memory/knowledge/`へ記録推奨）: 全リトライ失敗時に`_currentSnapshot`を明示的に無効化する設計、`capture()`配線を直接検証する回帰テストの追加。
@@ -442,6 +485,28 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
   4. TDD Green確認: `.\gradlew.bat :structured-tool-api:testDebugUnitTest` BUILD SUCCESSFUL。`StructuredToolApiTest` 19件全PASS、`SchemaDefinitionTest` 7件全PASS、合計26件（failures=0, errors=0）。
   5. 回帰確認: `.\gradlew.bat test` BUILD SUCCESSFUL（全モジュール単体テストPASS。android-actions 26件、android-snapshot 6件、structured-tool-api 26件）。`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL（210 actionable tasks、app-debug.apk生成まで確認）。
 
+- 2026-09-29 Kimi（M2 ツール拡張 WU-5: Debug Overlay / Developer Harness UI統合）:
+  1. WU-4完了後に着手。対象ファイルは `app/src/main/java/dev/rancher/app/DebugOverlayController.kt`、`debug-harness/src/main/java/dev/rancher/debug/harness/RancherDevHarnessScreen.kt`、`app/src/main/res/values/strings.xml`、`debug-harness/src/main/res/values/strings.xml`、`TASK.md` のみ。
+  2. `DebugOverlayController.kt` に4ツールのUIトリガーを追加:
+     - オーバーレイ上部の既存コントロール行（Refresh/Close）に `Back` / `Home` ボタンを追加。両ボタンはグローバル操作でnode選択不要。
+     - 各node行の既存 `CLICK` ボタンの下に、対象nodeIdに対する `LONG` / `SCROLL+` / `SCROLL-` ボタンを追加。`LONG` は `node.longClickable` がtrueの場合、`SCROLL+`/`SCROLL-` は `node.scrollable` がtrueの場合に表示。
+     - 既存の `Refresh` / `CLICK` ボタンのロジック・配置・デザインは変更せず、ボタン追加のみ。
+     - 各ボタンは `AndroidStructuredToolApi` の `longClick` / `scroll` / `back` / `home` を呼び出し、`ToolResult.status`/`message`/`previousSnapshotId`/`newSnapshotId` を既存の `status` 表示領域に反映。
+  3. `RancherDevHarnessScreen.kt` に4ツールのUIトリガーを追加:
+     - トップの `FlowRow`（Accessibility Settings / M0 Settings demo / Hide overlay）に `Back` / `Home` ボタンを追加。`service != null` の場合のみ有効。
+     - 各 `NodeCard` の既存 `CLICK` ボタンの下に `LONG` / `SCROLL+` / `SCROLL-` ボタンを追加。`LONG` は `node.longClickable` がtrueの場合、`SCROLL+`/`SCROLL-` は `node.scrollable` がtrueの場合に表示。
+     - 既存の `Refresh current window` / `CLICK` ボタンのロジック・配置・デザインは変更せず、ボタン追加のみ。
+     - 各ボタンは `AndroidStructuredToolApi` の対応メソッドを呼び出し、結果を `lastResult`（画面上部のカード）に反映。
+  4. 文字列リソースを追加:
+     - `app/src/main/res/values/strings.xml` に `button_long_click_node` / `button_scroll_forward_node` / `button_scroll_backward_node` / `button_back` / `button_home` を追加。
+     - `debug-harness/src/main/res/values/strings.xml` に `button_back` / `button_home` / `button_long_click` / `button_long_clicking` / `button_scroll_forward` / `button_scrolling_forward` / `button_scroll_backward` / `button_scrolling_backward` を追加。
+  5. ビルド確認:
+     - コマンド: `.\gradlew.bat :app:assembleDebug`
+     - 結果: BUILD SUCCESSFUL in 12s（144 actionable tasks: 23 executed, 121 up-to-date）。app-debug.apk 生成まで確認。
+     - コマンド: `.\gradlew.bat :debug-harness:assembleDebug`
+     - 結果: BUILD SUCCESSFUL in 6s（68 actionable tasks: 3 executed, 65 up-to-date）。debug-harness AAR 生成まで確認。
+  6. 補足: `structured-tool-api` 配下、`android-actions` 配下、`android-snapshot` 配下、`core-model` 配下は一切変更せず、WU-1〜WU-4の実装を呼び出すのみ。
+
 - 2026-09-29 Kimi（M2 ツール拡張 WU-6: ドキュメント整備）:
   1. WU-4完了後に着手。対象ファイルは `docs/M2_TOOL_EXPANSION.md`（新規）、`README.md`（ツール一覧セクションのみ）、`TASK.md`（テスト結果欄・作業履歴欄のみ）。
   2. `docs/M1_STRUCTURED_TOOL_API.md` のフォーマットを踏襲し、`docs/M2_TOOL_EXPANSION.md` を新規作成。内容：M2の目的・利用者・追加4ツール（longClick/scroll/back/home）の入出力スキーマ・安全原則（stale snapshot保護・fingerprint照合・NOT_SCROLLABLE拒絶・fresh observation・password redaction）・対象外（setText/screenshot等）・レイヤー境界・Key files・Verification。
@@ -457,7 +522,7 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
     - 実装との整合確認: `StructuredToolApi.kt` の `tools` カタログが6件であること、`longClick`/`scroll`/`back`/`home` の入出力スキーマが実装と一致することを確認。
   - コミット: `docs: WU-6 add M2 tool expansion documentation`。
 
-- M2 WU-5（任意）: Debug Overlay / Developer Harness への4ツールUI統合。`app/DebugOverlayController.kt`、`debug-harness/RancherDevHarnessScreen.kt` に longClick/scroll/back/home のボタン・呼び出しを追加（UIデザイン変更なし）。WU-4完了後に着手可。
-- WU-5後の確認工程（Claude実施）: Emulatorまたは実機で4ツール（longClick/scroll/back/home）それぞれについて observe→操作→fresh snapshot の成功をログ・スクリーンショットで確認し、TASK.mdテスト結果へ記録。これを欠くと受入条件「4ツールいずれもEmulatorまたは実機で成功を確認」を満たせない。未実施。
-- 次の担当者: WU-5担当（別担当・進行中） → 完了後 Codex品質ゲートレビュー
-- 次の行動: WU-5 の完了待ち、完了後は Codex による品質ゲートレビューへ引き継ぐ。
+- M2 WU-5（完了）: Debug Overlay / Developer Harness への4ツールUI統合。`app/DebugOverlayController.kt`、`debug-harness/RancherDevHarnessScreen.kt` に longClick/scroll/back/home のボタン・呼び出しを追加（UIデザイン変更なし）。`.\gradlew.bat :app:assembleDebug` および `.\gradlew.bat :debug-harness:assembleDebug` が BUILD SUCCESSFUL。
+- WU-5後の確認工程（Claude実施・未実施）: Emulatorまたは実機で4ツール（longClick/scroll/back/home）それぞれについて observe→操作→fresh snapshot の成功をログ・スクリーンショットで確認し、TASK.mdテスト結果へ記録。これを欠くと受入条件「4ツールいずれもEmulatorまたは実機で成功を確認」を満たせない。
+- 次の担当者: Claude（Emulator/実機での4ツール動作確認） → 完了後 Codex品質ゲートレビュー
+- 次の行動: Claudeによる実機/Emulatorでの4ツール動作確認完了待ち、完了後は Codex による品質ゲートレビューへ引き継ぐ。
