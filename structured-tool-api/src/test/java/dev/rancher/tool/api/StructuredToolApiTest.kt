@@ -314,6 +314,320 @@ class StructuredToolApiTest {
         assertEquals("Captured snap_fresh_capture.", result.message)
     }
 
+    @Test
+    fun longClick_delegatesExactlyOnce_andPassesThroughSuccess() = runTest {
+        var callCount = 0
+        val expectedResult = ToolResult(
+            status = ToolStatus.SUCCESS,
+            message = "Long click executed and a fresh snapshot was captured.",
+            previousSnapshotId = "snap_000001",
+            newSnapshotId = "snap_000002",
+            durationMs = 120L,
+        )
+        val api = api(
+            longClickExecutor = { snapshotId, nodeId ->
+                callCount++
+                assertEquals("snap_000001", snapshotId)
+                assertEquals(42, nodeId)
+                expectedResult
+            },
+        )
+
+        val result = api.longClick("snap_000001", 42)
+
+        assertEquals("longClick must delegate exactly once", 1, callCount)
+        assertEquals(ToolStatus.SUCCESS, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+        assertEquals("snap_000002", result.newSnapshotId)
+        assertEquals(expectedResult, result)
+    }
+
+    @Test
+    fun longClick_failedTimeoutStaleAndNotFoundStatusesArePassedThrough() = runTest {
+        val testCases = listOf(
+            ToolResult(
+                status = ToolStatus.FAILED,
+                message = "Long click failed on target node.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 45L,
+            ),
+            ToolResult(
+                status = ToolStatus.TIMEOUT,
+                message = "Timed out waiting for fresh snapshot.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 300L,
+            ),
+            ToolResult(
+                status = ToolStatus.STALE_SNAPSHOT,
+                message = "Snapshot is stale.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 10L,
+            ),
+            ToolResult(
+                status = ToolStatus.NOT_FOUND,
+                message = "Node ID not found in snapshot.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 15L,
+            ),
+        )
+
+        for (expected in testCases) {
+            var calls = 0
+            val api = api(
+                longClickExecutor = { _, _ ->
+                    calls++
+                    expected
+                },
+            )
+
+            val result = api.longClick("snap_000001", 10)
+            assertEquals("longClick must delegate exactly once for status ${expected.status}", 1, calls)
+            assertEquals(expected.status, result.status)
+            assertEquals(expected.message, result.message)
+            assertEquals(expected.previousSnapshotId, result.previousSnapshotId)
+            assertEquals(expected.newSnapshotId, result.newSnapshotId)
+            assertEquals(expected, result)
+        }
+    }
+
+    @Test
+    fun scroll_delegatesExactlyOnce_andPassesThroughSuccess() = runTest {
+        var callCount = 0
+        val expectedResult = ToolResult(
+            status = ToolStatus.SUCCESS,
+            message = "Scroll executed and a fresh snapshot was captured.",
+            previousSnapshotId = "snap_000001",
+            newSnapshotId = "snap_000002",
+            durationMs = 120L,
+        )
+        val api = api(
+            scrollExecutor = { snapshotId, nodeId, direction ->
+                callCount++
+                assertEquals("snap_000001", snapshotId)
+                assertEquals(42, nodeId)
+                assertEquals("forward", direction)
+                expectedResult
+            },
+        )
+
+        val result = api.scroll("snap_000001", 42, "forward")
+
+        assertEquals("scroll must delegate exactly once", 1, callCount)
+        assertEquals(ToolStatus.SUCCESS, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+        assertEquals("snap_000002", result.newSnapshotId)
+        assertEquals(expectedResult, result)
+    }
+
+    @Test
+    fun scroll_failedTimeoutStaleNotFoundAndNotScrollableStatusesArePassedThrough() = runTest {
+        val testCases = listOf(
+            ToolResult(
+                status = ToolStatus.FAILED,
+                message = "Scroll failed on target node.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 45L,
+            ),
+            ToolResult(
+                status = ToolStatus.TIMEOUT,
+                message = "Timed out waiting for fresh snapshot.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 300L,
+            ),
+            ToolResult(
+                status = ToolStatus.STALE_SNAPSHOT,
+                message = "Snapshot is stale.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 10L,
+            ),
+            ToolResult(
+                status = ToolStatus.NOT_FOUND,
+                message = "Node ID not found in snapshot.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 15L,
+            ),
+            ToolResult(
+                status = ToolStatus.NOT_SCROLLABLE,
+                message = "Node is not scrollable.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 5L,
+            ),
+        )
+
+        for (expected in testCases) {
+            var calls = 0
+            val api = api(
+                scrollExecutor = { _, _, _ ->
+                    calls++
+                    expected
+                },
+            )
+
+            val result = api.scroll("snap_000001", 10, "backward")
+            assertEquals("scroll must delegate exactly once for status ${expected.status}", 1, calls)
+            assertEquals(expected.status, result.status)
+            assertEquals(expected.message, result.message)
+            assertEquals(expected.previousSnapshotId, result.previousSnapshotId)
+            assertEquals(expected.newSnapshotId, result.newSnapshotId)
+            assertEquals(expected, result)
+        }
+    }
+
+    @Test
+    fun back_delegatesExactlyOnce_andPassesThroughSuccess() = runTest {
+        var callCount = 0
+        val expectedResult = ToolResult(
+            status = ToolStatus.SUCCESS,
+            message = "Back executed and a fresh snapshot was captured.",
+            previousSnapshotId = "snap_000001",
+            newSnapshotId = "snap_000002",
+            durationMs = 80L,
+        )
+        val api = api(
+            backExecutor = {
+                callCount++
+                expectedResult
+            },
+        )
+
+        val result = api.back()
+
+        assertEquals("back must delegate exactly once", 1, callCount)
+        assertEquals(ToolStatus.SUCCESS, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+        assertEquals("snap_000002", result.newSnapshotId)
+        assertEquals(expectedResult, result)
+    }
+
+    @Test
+    fun back_failedAndTimeoutStatusesArePassedThrough() = runTest {
+        val testCases = listOf(
+            ToolResult(
+                status = ToolStatus.FAILED,
+                message = "GLOBAL_ACTION_BACK was rejected.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 20L,
+            ),
+            ToolResult(
+                status = ToolStatus.TIMEOUT,
+                message = "Back executed, but Rancher could not capture a fresh UI snapshot.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 300L,
+            ),
+        )
+
+        for (expected in testCases) {
+            var calls = 0
+            val api = api(
+                backExecutor = {
+                    calls++
+                    expected
+                },
+            )
+
+            val result = api.back()
+            assertEquals("back must delegate exactly once for status ${expected.status}", 1, calls)
+            assertEquals(expected.status, result.status)
+            assertEquals(expected.message, result.message)
+            assertEquals(expected.previousSnapshotId, result.previousSnapshotId)
+            assertEquals(expected.newSnapshotId, result.newSnapshotId)
+            assertEquals(expected, result)
+        }
+    }
+
+    @Test
+    fun home_delegatesExactlyOnce_andPassesThroughSuccess() = runTest {
+        var callCount = 0
+        val expectedResult = ToolResult(
+            status = ToolStatus.SUCCESS,
+            message = "Home executed and a fresh snapshot was captured.",
+            previousSnapshotId = "snap_000001",
+            newSnapshotId = "snap_000002",
+            durationMs = 80L,
+        )
+        val api = api(
+            homeExecutor = {
+                callCount++
+                expectedResult
+            },
+        )
+
+        val result = api.home()
+
+        assertEquals("home must delegate exactly once", 1, callCount)
+        assertEquals(ToolStatus.SUCCESS, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+        assertEquals("snap_000002", result.newSnapshotId)
+        assertEquals(expectedResult, result)
+    }
+
+    @Test
+    fun home_failedAndTimeoutStatusesArePassedThrough() = runTest {
+        val testCases = listOf(
+            ToolResult(
+                status = ToolStatus.FAILED,
+                message = "GLOBAL_ACTION_HOME was rejected.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 20L,
+            ),
+            ToolResult(
+                status = ToolStatus.TIMEOUT,
+                message = "Home executed, but Rancher could not capture a fresh UI snapshot.",
+                previousSnapshotId = "snap_000001",
+                newSnapshotId = null,
+                durationMs = 300L,
+            ),
+        )
+
+        for (expected in testCases) {
+            var calls = 0
+            val api = api(
+                homeExecutor = {
+                    calls++
+                    expected
+                },
+            )
+
+            val result = api.home()
+            assertEquals("home must delegate exactly once for status ${expected.status}", 1, calls)
+            assertEquals(expected.status, result.status)
+            assertEquals(expected.message, result.message)
+            assertEquals(expected.previousSnapshotId, result.previousSnapshotId)
+            assertEquals(expected.newSnapshotId, result.newSnapshotId)
+            assertEquals(expected, result)
+        }
+    }
+
+    private fun api(
+        isConnected: () -> Boolean = { true },
+        capture: suspend () -> UiSnapshot? = { throw AssertionError("capture should not be called") },
+        clickExecutor: suspend (String, Int) -> ToolResult = { _, _ -> throw AssertionError("click should not be called") },
+        longClickExecutor: suspend (String, Int) -> ToolResult = { _, _ -> throw AssertionError("longClick should not be called") },
+        scrollExecutor: suspend (String, Int, String) -> ToolResult = { _, _, _ -> throw AssertionError("scroll should not be called") },
+        backExecutor: suspend () -> ToolResult = { throw AssertionError("back should not be called") },
+        homeExecutor: suspend () -> ToolResult = { throw AssertionError("home should not be called") },
+    ) = AndroidStructuredToolApi(
+        isConnected = isConnected,
+        capture = capture,
+        clickExecutor = clickExecutor,
+        longClickExecutor = longClickExecutor,
+        scrollExecutor = scrollExecutor,
+        backExecutor = backExecutor,
+        homeExecutor = homeExecutor,
+    )
+
     private fun snapshot(id: String) = UiSnapshot(
         id = id,
         createdAt = 0L,

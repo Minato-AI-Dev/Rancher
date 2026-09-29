@@ -20,6 +20,14 @@ class AndroidStructuredToolApi(
     private val clickExecutor: suspend (String, Int) -> ToolResult = { snapshotId, nodeId ->
         AndroidActionExecutor.click(snapshotId, nodeId)
     },
+    private val longClickExecutor: suspend (String, Int) -> ToolResult = { snapshotId, nodeId ->
+        AndroidActionExecutor.longClick(snapshotId, nodeId)
+    },
+    private val scrollExecutor: suspend (String, Int, String) -> ToolResult = { snapshotId, nodeId, direction ->
+        AndroidActionExecutor.scroll(snapshotId, nodeId, direction)
+    },
+    private val backExecutor: suspend () -> ToolResult = { AndroidActionExecutor.back() },
+    private val homeExecutor: suspend () -> ToolResult = { AndroidActionExecutor.home() },
 ) : StructuredToolApi {
 
     override suspend fun observe(): ObserveToolResult {
@@ -61,14 +69,28 @@ class AndroidStructuredToolApi(
         return clickExecutor(snapshotId, nodeId)
     }
 
-    // WU-3: StructuredToolApi インターフェース拡張に伴うコンパイル通過用の
-    // ダミー実装。実際の委譲ロジックは WU-4 で実装する。
-    override suspend fun longClick(snapshotId: String, nodeId: Int): ToolResult = TODO("WU-4")
+    override suspend fun longClick(snapshotId: String, nodeId: Int): ToolResult {
+        // 既存のAndroidActionExecutorへ1回だけ委譲する。API層で代替識別子や
+        // 迂回ロジックを追加せず、stale/not-found/fingerprint不一致などの
+        // 判定も既存エンジンのまま透過的に返す。
+        return longClickExecutor(snapshotId, nodeId)
+    }
 
-    override suspend fun scroll(snapshotId: String, nodeId: Int, direction: String): ToolResult =
-        TODO("WU-4")
+    override suspend fun scroll(snapshotId: String, nodeId: Int, direction: String): ToolResult {
+        // 既存のAndroidActionExecutorへ1回だけ委譲する。スクロール方向も
+        // そのまま渡し、API層で解釈や変換を行わない。
+        return scrollExecutor(snapshotId, nodeId, direction)
+    }
 
-    override suspend fun back(): ToolResult = TODO("WU-4")
+    override suspend fun back(): ToolResult {
+        // 既存のAndroidActionExecutorへ1回だけ委譲する。
+        // グローバル操作の成否とfresh observationの結果をそのまま返す。
+        return backExecutor()
+    }
 
-    override suspend fun home(): ToolResult = TODO("WU-4")
+    override suspend fun home(): ToolResult {
+        // 既存のAndroidActionExecutorへ1回だけ委譲する。
+        // グローバル操作の成否とfresh observationの結果をそのまま返す。
+        return homeExecutor()
+    }
 }

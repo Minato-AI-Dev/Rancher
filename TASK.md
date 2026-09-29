@@ -1,6 +1,6 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU-1完了、WU-2完了、WU-3完了、WU-4待ち）
+- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU-1完了、WU-2完了、WU-3完了、WU-4完了）
 - 現在の担当: Kimi（WU-3から順次実装）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
@@ -215,10 +215,10 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
 
 - 2026-09-24 Kimi（追加タスク対応）:
   1. `TASK.md` の目的・アーキテクチャ不変条件・追加タスク（2026-09-24）・設計判断（2026-09-24 Claudeエントリ）を読み込み着手。
-  2. TDD Red: `UiSnapshotEngineTest.kt` に `testRetry_returnsValueAfterTransientNulls` / `testRetry_returnsNullAfterAllAttemptsFail` を追加。`UiSnapshotEngine.retry(...)` が未実装のため `.&gradlew.bat :android-snapshot:testDebugUnitTest` が `Unresolved reference 'retry'` で失敗（Redを確認）。
+  2. TDD Red: `UiSnapshotEngineTest.kt` に `testRetry_returnsValueAfterTransientNulls` / `testRetry_returnsNullAfterAllAttemptsFail` を追加。`UiSnapshotEngine.retry(...)` が未実装のため `.\gradlew.bat :android-snapshot:testDebugUnitTest` が `Unresolved reference 'retry'` で失敗（Redを確認）。
   3. TDD Green: `UiSnapshotEngine.kt` に短いリトライ（3回、100ms間隔）を実装。`capture()` は `AccessibilityBridge.currentRoot()` が一時的に null でも諦めずリトライし、最終的にnullの場合は `Log.w(TAG, "capture() failed: rootInActiveWindow remained null after retry")` を出力。リトライロジックはテストから検証できるよう `internal suspend fun <T> retry(...)` として分離。
   4. `DebugOverlayController.kt` を確認。`AndroidActionExecutor.click()` の結果（ToolResult）が `status` 変数に保持され、`render()` 内で `${result.status}: ${result.message}` としてオーバーレイ上に表示されることを確認。`click()` 失敗時も `status` が更新され手動 `render()` が呼ばれるため、ユーザーへ結果が表示される。既存ロジックを壊さず修正不要と判断。
-  5. `.&gradlew.bat :android-actions:testDebugUnitTest :android-snapshot:testDebugUnitTest` を実行。android-snapshot 6件（新規2件含む）、android-actions 2件、すべて PASS。`.&gradlew.bat assembleDebug` も BUILD SUCCESSFUL（APK生成まで確認）。
+  5. `.\gradlew.bat :android-actions:testDebugUnitTest :android-snapshot:testDebugUnitTest` を実行。android-snapshot 6件（新規2件含む）、android-actions 2件、すべて PASS。`.\gradlew.bat assembleDebug` も BUILD SUCCESSFUL（APK生成まで確認）。
 - 2026-09-16 Claude: リポジトリclone、環境調査（JDK/Android SDK/AVD/adb/emulator確認）、TASK.md作成、Kimiへタスク委譲
 - 2026-09-16 Kimi(1回目): gradle-wrapper.jar生成、build.gradle.kts x7修正まで進行 → システムメモリ不足でプロセス強制終了（タスク失敗）
 - 2026-09-17 Kimi(2回目): 上記を引き継ぎ再開。Emulator(Pixel_8a)起動、`dev.rancher.app` install、RancherAccessibilityServiceの有効化まで到達（Claudeがadbで直接確認: `settings get secure enabled_accessibility_services` にサービス名あり、logcatに`RancherAccessibility: event=TYPE_WINDOW_CONTENT_CHANGED`を継続受信）。92ターン・約33分実行後、Moonshot API側の429 (engine overloaded) でセッション終了（exit 1、2回目の失敗）。TASK.md更新・コミット・PR作成には未到達
@@ -359,6 +359,31 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
     - 結果: BUILD SUCCESSFUL（210 actionable tasks、app-debug.apk生成まで確認）。
   - 補足: `AndroidStructuredToolApi.kt` には WU-4 で実装する4メソッドのダミー実装（`TODO("WU-4")`）を最小限追加。既存 `observe`/`click` 実装ロジックは一切変更しない。`ToolDefinition.kt` は既存定義で十分であり変更不要。
 
+- M2 ツール拡張 WU-4（Structured Tool API 委譲実装＋契約テスト、2026-09-29・担当Kimi）:
+  - 実行環境: OS: Windows 11 Home (amd64) / JDK: OpenJDK 21.0.10 (LTS) / Gradle: 9.6.0 / AGP: 9.4.0 / Kotlin: 2.4.20
+  - TDD Red確認:
+    - コマンド: `.\gradlew.bat :structured-tool-api:testDebugUnitTest`
+    - 結果: `AndroidStructuredToolApi.kt` の4メソッドがまだ `TODO("WU-4")` であり、新規コンストラクタ引数 `longClickExecutor`/`scrollExecutor`/`backExecutor`/`homeExecutor` が存在しないため、`StructuredToolApiTest.kt` で `NAMED_PARAMETER_NOT_FOUND` コンパイルエラー（Red確認）。
+  - TDD Green確認:
+    - コマンド: `.\gradlew.bat :structured-tool-api:testDebugUnitTest`
+    - 結果: BUILD SUCCESSFUL。`StructuredToolApiTest` 19件全PASS（内訳: 既存11件 + 新規8件: longClick委譲・status透過、scroll委譲・status透過、back委譲・status透過、home委譲・status透過）。`SchemaDefinitionTest` 7件全PASS。合計26件（failures=0, errors=0）。
+      - 新規テストで検証したこと:
+        - `longClick_delegatesExactlyOnce_andPassesThroughSuccess`: `longClick` がexecutorを1回だけ呼び出し、SUCCESS結果を無加工で返す。
+        - `longClick_failedTimeoutStaleAndNotFoundStatusesArePassedThrough`: FAILED/TIMEOUT/STALE_SNAPSHOT/NOT_FOUND がAPI層を通過する。
+        - `scroll_delegatesExactlyOnce_andPassesThroughSuccess`: `scroll` がexecutorを1回だけ呼び出し、SUCCESS結果を無加工で返す。
+        - `scroll_failedTimeoutStaleNotFoundAndNotScrollableStatusesArePassedThrough`: FAILED/TIMEOUT/STALE_SNAPSHOT/NOT_FOUND/NOT_SCROLLABLE がAPI層を通過する。
+        - `back_delegatesExactlyOnce_andPassesThroughSuccess`: `back` がexecutorを1回だけ呼び出し、SUCCESS結果を無加工で返す。
+        - `back_failedAndTimeoutStatusesArePassedThrough`: FAILED/TIMEOUT がAPI層を通過する。
+        - `home_delegatesExactlyOnce_andPassesThroughSuccess`: `home` がexecutorを1回だけ呼び出し、SUCCESS結果を無加工で返す。
+        - `home_failedAndTimeoutStatusesArePassedThrough`: FAILED/TIMEOUT がAPI層を通過する。
+  - 回帰確認:
+    - コマンド: `.\gradlew.bat test`
+    - 結果: BUILD SUCCESSFUL。全モジュール単体テストPASS（android-actions 26件、android-snapshot 6件、structured-tool-api 26件、合計58件）。
+    - コマンド: `.\gradlew.bat assembleDebug`
+    - 結果: BUILD SUCCESSFUL（210 actionable tasks、app-debug.apk生成まで確認）。
+  - 補足: `AndroidStructuredToolApi.kt` の既存 `observe`/`click` 実装ロジックは一切変更しない。`AndroidActionExecutor.kt` は変更しない。`StructuredToolApiTest.kt` に追加した private `api(...)` ヘルパーは、未使用のexecutorが呼ばれた場合に即座にAssertionErrorを投げることで、誤った委譲を検知する。
+  - 未実施・次工程: Emulator/実機での4ツール動作確認はWU-5後の確認工程として未実施。
+
 ## 引き継ぎメモ
 - 完了事項:
   - 追加タスク（2026-09-24）: クリック後の自動再観測が実機で発火しない不具合を修正。
@@ -369,7 +394,7 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
   - TDD Red→Green の証跡を残し、新規テスト2件を追加:
     - `testRetry_returnsValueAfterTransientNulls`: root が最初 null で数回後に非nullになるケースでリトライ成功。
     - `testRetry_returnsNullAfterAllAttemptsFail`: リトライしても全て null なら最終的に null を返す（既存動作を壊さない）。
-  - 単体テスト全8件（android-snapshot 6件、android-actions 2件）が failures=0, errors=0 で PASS。`.&gradlew.bat assembleDebug` も BUILD SUCCESSFUL。
+  - 単体テスト全8件（android-snapshot 6件、android-actions 2件）が failures=0, errors=0 で PASS。`.\gradlew.bat assembleDebug` も BUILD SUCCESSFUL。
   - 追加タスク（2026-09-27〜2026-09-28）: M1 Structured Tool API を導入。
     - 新規モジュール `structured-tool-api` を作成し、`settings.gradle.kts` / `build.gradle.kts` を登録（WU-1）。
     - `StructuredToolApi` インターフェース、`ToolDefinition`、`ObserveToolResult` を定義。公開ツールは `observe` と `click` の2件のみ（WU-2）。
@@ -392,7 +417,7 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
     - `AndroidActionExecutor.kt` に `longClick`/`scroll` メソッドを追加。clickと同じ snapshotId 一致確認・fingerprint照合（`resolveBridge`）・`STALE_SNAPSHOT`/`NOT_FOUND` 契約を踏襲。`scroll` は対象ノードの `scrollable==false` の場合 `NOT_SCROLLABLE` で安全に拒絶。成功後は `observeAfterAction` で1操作→1回の必ず成功する再観測を実施。
     - `AndroidActionExecutorTest.kt` に longClick/scroll の安全契約・正常系・fresh capture失敗（TIMEOUT/FAILED）テストを追加。JVM単体テストでAndroidフレームワークに依存しない安全契約検証のため、テスト用seam（`isConnectedForTesting`/`resolveForTesting`/`performActionForTesting`/`captureForTesting`/`eventsForTesting`）を追加。
     - `android-actions/build.gradle.kts` に `testOptions.unitTests.isReturnDefaultValues = true` を追加し、`AccessibilityNodeInfo()` ダミー生成を可能にした。
-    - TDD Red→Green証跡を記録。`AndroidActionExecutorTest` 16件全PASS（既存click 2件 + longClick 6件 + scroll 8件）。`.&gradlew.bat test` 全モジュールPASS、`.&gradlew.bat assembleDebug` BUILD SUCCESSFUL。
+    - TDD Red→Green証跡を記録。`AndroidActionExecutorTest` 16件全PASS（既存click 2件 + longClick 6件 + scroll 8件）。`.\gradlew.bat test` 全モジュールPASS、`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL。
     - コミット: `feat(android-actions): WU-1 add longClick/scroll actions with TDD`（ブランチ最新コミット）。
 - 未対応・次工程:
   - M2 WU-2（back/home、2026-09-29・担当Kimi）:
@@ -410,6 +435,15 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
   7. TDD Green確認: `.\gradlew.bat :structured-tool-api:testDebugUnitTest` BUILD SUCCESSFUL。`SchemaDefinitionTest` 8件全PASS、`StructuredToolApiTest` 10件全PASS、合計18件（failures=0, errors=0）。
   8. 回帰確認: `.\gradlew.bat test` BUILD SUCCESSFUL（全モジュール単体テストPASS。android-actions 26件、android-snapshot 6件、structured-tool-api 18件）。`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL（210 actionable tasks、app-debug.apk生成まで確認）。
 
-- M2 WU-4: `AndroidStructuredToolApi.kt` への4ツール委譲実装 + `StructuredToolApiTest.kt` への契約テスト追加（委譲回数==1、SUCCESS/STALE_SNAPSHOT/NOT_FOUND/NOT_SCROLLABLE/FAILED/TIMEOUT透過）。WU-3完了後に着手。
-- 次の担当者: Kimi（M2 WU-4: Structured Tool API 委譲実装）
-- 次の行動: WU-4 をTDD Red→Greenで実装し、`structured-tool-api` のテストが全PASSすることを確認。完了後はCodex品質ゲートレビューへ。
+- 2026-09-29 Kimi（M2 ツール拡張 WU-4: Structured Tool API 委譲実装＋契約テスト）:
+  1. WU-3完了後に着手。対象ファイルは `AndroidStructuredToolApi.kt`、`StructuredToolApiTest.kt`、`TASK.md` のみ。
+  2. TDD Red: `AndroidStructuredToolApi.kt` に4メソッドの委譲用コンストラクタ引数（`longClickExecutor`/`scrollExecutor`/`backExecutor`/`homeExecutor`）を追加し、メソッド本体は `TODO("WU-4")` のまま。`StructuredToolApiTest.kt` に4ツールそれぞれの委譲回数==1検証・SUCCESS透過・各種失敗ステータス（longClick/scrollでは STALE_SNAPSHOT/NOT_FOUND/FAILED/TIMEOUT、scrollではさらに NOT_SCROLLABLE、back/homeでは FAILED/TIMEOUT）透過テストを追加。`.\gradlew.bat :structured-tool-api:testDebugUnitTest` 実行で、新規コンストラクタ引数が存在しないため `NAMED_PARAMETER_NOT_FOUND` コンパイルエラー（Red確認）。
+  3. TDD Green: `AndroidStructuredToolApi.kt` の4メソッドを、受け取ったexecutorラムダを1回だけ呼び出し結果を無加工で返す委譲実装に置き換え。`longClick`/`scroll` は `AndroidActionExecutor.longClick`/`scroll` へ、`back`/`home` は `AndroidActionExecutor.back`/`home` へ委譲するデフォルトラムダを設定。既存 `observe`/`click` の実装ロジックは一切変更しない。
+  4. TDD Green確認: `.\gradlew.bat :structured-tool-api:testDebugUnitTest` BUILD SUCCESSFUL。`StructuredToolApiTest` 19件全PASS、`SchemaDefinitionTest` 7件全PASS、合計26件（failures=0, errors=0）。
+  5. 回帰確認: `.\gradlew.bat test` BUILD SUCCESSFUL（全モジュール単体テストPASS。android-actions 26件、android-snapshot 6件、structured-tool-api 26件）。`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL（210 actionable tasks、app-debug.apk生成まで確認）。
+
+- M2 WU-5（任意）: Debug Overlay / Developer Harness への4ツールUI統合。`app/DebugOverlayController.kt`、`debug-harness/RancherDevHarnessScreen.kt` に longClick/scroll/back/home のボタン・呼び出しを追加（UIデザイン変更なし）。WU-4完了後に着手可。
+- M2 WU-6: M2 ドキュメント整備。`docs/M2_TOOL_EXPANSION.md` 新規作成または `docs/M1_STRUCTURED_TOOL_API.md` 更新、`README.md` のツール一覧を6件に更新。WU-4完了後に着手可（WU-5と並行可）。
+- WU-5後の確認工程（Claude実施）: Emulatorまたは実機で4ツール（longClick/scroll/back/home）それぞれについて observe→操作→fresh snapshot の成功をログ・スクリーンショットで確認し、TASK.mdテスト結果へ記録。これを欠くと受入条件「4ツールいずれもEmulatorまたは実機で成功を確認」を満たせない。未実施。
+- 次の担当者: Kimi（M2 WU-5/WU-6 または Codex品質ゲートレビュー）
+- 次の行動: WU-5/WU-6 の実装、または Codex による品質ゲートレビューへ進める。
