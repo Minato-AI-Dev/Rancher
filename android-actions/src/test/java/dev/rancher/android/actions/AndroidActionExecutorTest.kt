@@ -1,5 +1,6 @@
 package dev.rancher.android.actions
 
+import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import dev.rancher.android.accessibility.AccessibilityBridge
@@ -24,6 +25,7 @@ class AndroidActionExecutorTest {
         AndroidActionExecutor.isConnectedForTesting = null
         AndroidActionExecutor.resolveForTesting = null
         AndroidActionExecutor.performActionForTesting = null
+        AndroidActionExecutor.performGlobalActionForTesting = null
         AndroidActionExecutor.captureForTesting = null
         UiSnapshotEngine.setCurrentSnapshotForTesting(null)
     }
@@ -337,6 +339,183 @@ class AndroidActionExecutorTest {
             nodeId = 13,
             direction = "forward",
         )
+
+        assertEquals(ToolStatus.FAILED, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+        assertNull(result.newSnapshotId)
+    }
+
+    // --- back/home global actions ---
+
+    @Test
+    fun testBack_notConnected_returnsUserActionRequired() = runTest {
+        UiSnapshotEngine.setCurrentSnapshotForTesting(snapshot("snap_000001"))
+        AndroidActionExecutor.isConnectedForTesting = { false }
+
+        val result = AndroidActionExecutor.back()
+
+        assertEquals(ToolStatus.USER_ACTION_REQUIRED, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+    }
+
+    @Test
+    fun testBack_globalActionRejected_returnsFailed() = runTest {
+        UiSnapshotEngine.setCurrentSnapshotForTesting(snapshot("snap_000001"))
+        AndroidActionExecutor.isConnectedForTesting = { true }
+        AndroidActionExecutor.performGlobalActionForTesting = { action ->
+            assertEquals(AccessibilityService.GLOBAL_ACTION_BACK, action)
+            false
+        }
+
+        val result = AndroidActionExecutor.back()
+
+        assertEquals(ToolStatus.FAILED, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+        assertNull(result.newSnapshotId)
+    }
+
+    @Test
+    fun testBack_success_performsGlobalActionBackAndReturnsFreshSnapshot() = runTest {
+        val previousSnapshot = snapshot("snap_000001")
+        val freshSnapshot = snapshot("snap_000002")
+        UiSnapshotEngine.setCurrentSnapshotForTesting(previousSnapshot)
+        AndroidActionExecutor.isConnectedForTesting = { true }
+        AndroidActionExecutor.performGlobalActionForTesting = { action ->
+            assertEquals(AccessibilityService.GLOBAL_ACTION_BACK, action)
+            true
+        }
+        AndroidActionExecutor.captureForTesting = { freshSnapshot }
+
+        val result = AndroidActionExecutor.back()
+
+        assertEquals(ToolStatus.SUCCESS, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+        assertEquals("snap_000002", result.newSnapshotId)
+    }
+
+    @Test
+    fun testBack_freshCaptureFailure_withoutUiEvent_returnsTimeout() = runTest {
+        val previousSnapshot = snapshot("snap_000001")
+        UiSnapshotEngine.setCurrentSnapshotForTesting(previousSnapshot)
+        AndroidActionExecutor.isConnectedForTesting = { true }
+        AndroidActionExecutor.performGlobalActionForTesting = { _ -> true }
+        AndroidActionExecutor.captureForTesting = { null }
+        // UI変化イベントが到達しない状況を再現
+        AndroidActionExecutor.eventsForTesting = { MutableSharedFlow() }
+
+        val result = AndroidActionExecutor.back()
+
+        assertEquals(ToolStatus.TIMEOUT, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+        assertNull(result.newSnapshotId)
+    }
+
+    @Test
+    fun testBack_freshCaptureFailure_withUiEvent_returnsFailed() = runTest {
+        val previousSnapshot = snapshot("snap_000001")
+        val events = MutableSharedFlow<AccessibilitySignal>(replay = 1)
+        UiSnapshotEngine.setCurrentSnapshotForTesting(previousSnapshot)
+        AndroidActionExecutor.isConnectedForTesting = { true }
+        AndroidActionExecutor.performGlobalActionForTesting = { _ -> true }
+        AndroidActionExecutor.captureForTesting = { null }
+        AndroidActionExecutor.eventsForTesting = { events }
+
+        events.emit(
+            AccessibilitySignal(
+                sequence = 1,
+                packageName = previousSnapshot.packageName,
+                eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            ),
+        )
+
+        val result = AndroidActionExecutor.back()
+
+        assertEquals(ToolStatus.FAILED, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+        assertNull(result.newSnapshotId)
+    }
+
+    @Test
+    fun testHome_notConnected_returnsUserActionRequired() = runTest {
+        UiSnapshotEngine.setCurrentSnapshotForTesting(snapshot("snap_000001"))
+        AndroidActionExecutor.isConnectedForTesting = { false }
+
+        val result = AndroidActionExecutor.home()
+
+        assertEquals(ToolStatus.USER_ACTION_REQUIRED, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+    }
+
+    @Test
+    fun testHome_globalActionRejected_returnsFailed() = runTest {
+        UiSnapshotEngine.setCurrentSnapshotForTesting(snapshot("snap_000001"))
+        AndroidActionExecutor.isConnectedForTesting = { true }
+        AndroidActionExecutor.performGlobalActionForTesting = { action ->
+            assertEquals(AccessibilityService.GLOBAL_ACTION_HOME, action)
+            false
+        }
+
+        val result = AndroidActionExecutor.home()
+
+        assertEquals(ToolStatus.FAILED, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+        assertNull(result.newSnapshotId)
+    }
+
+    @Test
+    fun testHome_success_performsGlobalActionHomeAndReturnsFreshSnapshot() = runTest {
+        val previousSnapshot = snapshot("snap_000001")
+        val freshSnapshot = snapshot("snap_000002")
+        UiSnapshotEngine.setCurrentSnapshotForTesting(previousSnapshot)
+        AndroidActionExecutor.isConnectedForTesting = { true }
+        AndroidActionExecutor.performGlobalActionForTesting = { action ->
+            assertEquals(AccessibilityService.GLOBAL_ACTION_HOME, action)
+            true
+        }
+        AndroidActionExecutor.captureForTesting = { freshSnapshot }
+
+        val result = AndroidActionExecutor.home()
+
+        assertEquals(ToolStatus.SUCCESS, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+        assertEquals("snap_000002", result.newSnapshotId)
+    }
+
+    @Test
+    fun testHome_freshCaptureFailure_withoutUiEvent_returnsTimeout() = runTest {
+        val previousSnapshot = snapshot("snap_000001")
+        UiSnapshotEngine.setCurrentSnapshotForTesting(previousSnapshot)
+        AndroidActionExecutor.isConnectedForTesting = { true }
+        AndroidActionExecutor.performGlobalActionForTesting = { _ -> true }
+        AndroidActionExecutor.captureForTesting = { null }
+        AndroidActionExecutor.eventsForTesting = { MutableSharedFlow() }
+
+        val result = AndroidActionExecutor.home()
+
+        assertEquals(ToolStatus.TIMEOUT, result.status)
+        assertEquals("snap_000001", result.previousSnapshotId)
+        assertNull(result.newSnapshotId)
+    }
+
+    @Test
+    fun testHome_freshCaptureFailure_withUiEvent_returnsFailed() = runTest {
+        val previousSnapshot = snapshot("snap_000001")
+        val events = MutableSharedFlow<AccessibilitySignal>(replay = 1)
+        UiSnapshotEngine.setCurrentSnapshotForTesting(previousSnapshot)
+        AndroidActionExecutor.isConnectedForTesting = { true }
+        AndroidActionExecutor.performGlobalActionForTesting = { _ -> true }
+        AndroidActionExecutor.captureForTesting = { null }
+        AndroidActionExecutor.eventsForTesting = { events }
+
+        events.emit(
+            AccessibilitySignal(
+                sequence = 1,
+                packageName = previousSnapshot.packageName,
+                eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            ),
+        )
+
+        val result = AndroidActionExecutor.home()
 
         assertEquals(ToolStatus.FAILED, result.status)
         assertEquals("snap_000001", result.previousSnapshotId)

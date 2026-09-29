@@ -1,5 +1,6 @@
 package dev.rancher.android.actions
 
+import android.accessibilityservice.AccessibilityService
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -28,6 +29,8 @@ object AndroidActionExecutor {
     internal var performActionForTesting: ((AccessibilityNodeInfo, Int) -> Boolean)? = null
     internal var captureForTesting: (() -> UiSnapshot?)? = null
     internal var eventsForTesting: (() -> Flow<AccessibilitySignal>)? = null
+    // 単体テスト用: performGlobalAction(BACK/HOME) を差し替える注入ポイント
+    internal var performGlobalActionForTesting: ((Int) -> Boolean)? = null
 
     private fun isConnectedBridge(): Boolean =
         isConnectedForTesting?.invoke() ?: AccessibilityBridge.isConnected()
@@ -43,6 +46,14 @@ object AndroidActionExecutor {
 
     private fun uiChangeEvents(): Flow<AccessibilitySignal> =
         eventsForTesting?.invoke() ?: AccessibilityBridge.events
+
+    // AccessibilityBridge へのグローバル操作窓口を android-actions 層で提供
+    // （指定どおり `AccessibilityBridge.performGlobalAction(...)` の形で呼び出せる）
+    private fun AccessibilityBridge.performGlobalAction(action: Int): Boolean =
+        service.value?.performGlobalAction(action) ?: false
+
+    private fun performGlobalActionBridge(action: Int): Boolean =
+        performGlobalActionForTesting?.invoke(action) ?: AccessibilityBridge.performGlobalAction(action)
 
     // 【安全性・誤操作防止: 古い画面情報（Stale Snapshot）に対する操作の即時遮断】
     // 操作対象として指定された snapshotId が最新画面（currentSnapshot）と異なる場合や、
@@ -330,6 +341,109 @@ object AndroidActionExecutor {
         )
     }
 
+    // 【安全性・誤操作防止: グローバル操作（back/home）はノードに紐づかない】
+    // snapshotId/nodeIdを取らず、システム全体の戻る/ホーム操作を実行します。
+    // ただし「1操作→1回の必ず成功する再観測」原則は維持し、実行後に最新UIを再取得します。
+    suspend fun back(): ToolResult {
+        val startedAt = System.currentTimeMillis()
+        val previousSnapshot = UiSnapshotEngine.currentSnapshot.value
+        val previousSnapshotId = previousSnapshot?.id
+
+        if (!isConnectedBridge()) {
+            return result(
+                status = ToolStatus.USER_ACTION_REQUIRED,
+                message = "Enable Rancher AccessibilityService first.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+        }
+
+        val performed = performGlobalActionBridge(AccessibilityService.GLOBAL_ACTION_BACK)
+        if (!performed) {
+            Log.w(TAG, "BACK failed")
+            return result(
+                status = ToolStatus.FAILED,
+                message = "GLOBAL_ACTION_BACK was rejected.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+        }
+
+        Log.i(TAG, "BACK executed")
+
+        return if (previousSnapshot != null) {
+            observeAfterGlobalAction(
+                previousSnapshot = previousSnapshot,
+                previousSnapshotId = previousSnapshotId!!,
+                startedAt = startedAt,
+                actionName = "Back",
+            )
+        } else {
+            val newSnapshot = captureBridge()
+            result(
+                status = if (newSnapshot != null) ToolStatus.SUCCESS else ToolStatus.TIMEOUT,
+                message = if (newSnapshot != null) {
+                    "Back executed and a fresh snapshot was captured."
+                } else {
+                    "Back executed, but Rancher could not capture a fresh UI snapshot."
+                },
+                previousSnapshotId = previousSnapshotId,
+                newSnapshotId = newSnapshot?.id,
+                startedAt = startedAt,
+            )
+        }
+    }
+
+    suspend fun home(): ToolResult {
+        val startedAt = System.currentTimeMillis()
+        val previousSnapshot = UiSnapshotEngine.currentSnapshot.value
+        val previousSnapshotId = previousSnapshot?.id
+
+        if (!isConnectedBridge()) {
+            return result(
+                status = ToolStatus.USER_ACTION_REQUIRED,
+                message = "Enable Rancher AccessibilityService first.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+        }
+
+        val performed = performGlobalActionBridge(AccessibilityService.GLOBAL_ACTION_HOME)
+        if (!performed) {
+            Log.w(TAG, "HOME failed")
+            return result(
+                status = ToolStatus.FAILED,
+                message = "GLOBAL_ACTION_HOME was rejected.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+        }
+
+        Log.i(TAG, "HOME executed")
+
+        return if (previousSnapshot != null) {
+            observeAfterGlobalAction(
+                previousSnapshot = previousSnapshot,
+                previousSnapshotId = previousSnapshotId!!,
+                startedAt = startedAt,
+                actionName = "Home",
+            )
+        } else {
+            val newSnapshot = captureBridge()
+            result(
+                status = if (newSnapshot != null) ToolStatus.SUCCESS else ToolStatus.TIMEOUT,
+                message = if (newSnapshot != null) {
+                    "Home executed and a fresh snapshot was captured."
+                } else {
+                    "Home executed, but Rancher could not capture a fresh UI snapshot."
+                },
+                previousSnapshotId = previousSnapshotId,
+                newSnapshotId = newSnapshot?.id,
+                startedAt = startedAt,
+            )
+        }
+    }
+
     // 【安全性・信頼性確保: 操作後の新しい画面状態の再取得（Fresh Observation）】
     // click/longClick/scroll いずれも共通で、「1操作→1回の必ず成功する再観測」を行います。
     // テスト用の events/capture seam を使えるよう、longClick/scroll からはこちらを呼びます。
@@ -337,6 +451,50 @@ object AndroidActionExecutor {
         snapshotId: String,
         nodeId: Int,
         label: String,
+        previousSnapshot: UiSnapshot,
+        previousSnapshotId: String,
+        startedAt: Long,
+        actionName: String,
+    ): ToolResult {
+        val targetPackage = previousSnapshot.packageName
+        val eventObserved = try {
+            withTimeout(UI_CHANGE_TIMEOUT_MS) {
+                uiChangeEvents().first { signal ->
+                    signal.packageName == targetPackage && signal.eventType in UI_CHANGE_EVENT_TYPES
+                }
+            }
+            true
+        } catch (_: TimeoutCancellationException) {
+            false
+        }
+
+        delay(UI_SETTLE_DELAY_MS)
+        val newSnapshot = captureBridge()
+
+        return when {
+            newSnapshot == null -> result(
+                status = if (eventObserved) ToolStatus.FAILED else ToolStatus.TIMEOUT,
+                message = "$actionName executed, but Rancher could not capture a fresh UI snapshot.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+            else -> result(
+                status = ToolStatus.SUCCESS,
+                message = if (eventObserved) {
+                    "$actionName executed and a fresh snapshot was captured."
+                } else {
+                    "$actionName executed; no target-app UI event arrived before timeout, so Rancher refreshed explicitly."
+                },
+                previousSnapshotId = previousSnapshotId,
+                newSnapshotId = newSnapshot.id,
+                startedAt = startedAt,
+            )
+        }
+    }
+
+    // back/home 用の fresh observation。ノードに紐づかないグローバル操作でも
+    // 「1操作→1回の必ず成功する再観測」原則を維持する。
+    private suspend fun observeAfterGlobalAction(
         previousSnapshot: UiSnapshot,
         previousSnapshotId: String,
         startedAt: Long,

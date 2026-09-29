@@ -1,7 +1,7 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU-1完了、WU-2待ち）
-- 現在の担当: Kimi（WU-2から順次実装）
+- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU-1完了、WU-2完了、WU-3待ち）
+- 現在の担当: Kimi（WU-3から順次実装）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
 - 更新日: 2026-09-29
@@ -207,6 +207,12 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
   3. TDD Green: `AndroidActionExecutor.kt` に `longClick`/`scroll` を実装。`ACTION_LONG_CLICK`/`ACTION_SCROLL_FORWARD`/`ACTION_SCROLL_BACKWARD` のみ使用。click と同じ snapshotId 一致確認・fingerprint 照合（`resolveBridge` 経由）・`STALE_SNAPSHOT`/`NOT_FOUND` 契約を踏襲。scroll は対象ノードの `scrollable==false` の場合 `NOT_SCROLLABLE` で安全に拒絶。成功後は `observeAfterAction` で1操作→1回の必ず成功する再観測を実施。`.\gradlew.bat :android-actions:testDebugUnitTest` で16件全PASS、`.\gradlew.bat test` で全モジュールPASS、`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL。
   4. 実装上の補足: JVM単体テストでAndroidフレームワークに依存しない安全契約検証を可能にするため、`AndroidActionExecutor` に `isConnectedForTesting`/`resolveForTesting`/`performActionForTesting`/`captureForTesting`/`eventsForTesting` のテスト用seamを追加（本番ではnull、テストでのみ差し替え）。また `android-actions/build.gradle.kts` に `testOptions.unitTests.isReturnDefaultValues = true` を追加し、未mockの `AccessibilityNodeInfo()` コンストラクタをJVM上でダミー生成可能にした。これらはM1で既知課題とされていた「fingerprint不一致・click後fresh capture失敗のJVM単体テスト不足」に対する対応でもある。
 
+- 2026-09-29 Kimi（M2 ツール拡張 WU-2: back/home）:
+  1. WU-1完了後、同一ファイルの継続編集として着手。対象ファイルは `AndroidActionExecutor.kt`、`AndroidActionExecutorTest.kt`、`TASK.md` のみ。
+  2. TDD Red: `AndroidActionExecutor.kt` に `back`/`home` メソッドのシグネチャと `performGlobalActionForTesting` テスト用seamを追加し、中身は未実装のまま。`AndroidActionExecutorTest.kt` に back/home のグローバル操作実行・fresh observation・fresh capture失敗（TIMEOUT/FAILED）・未接続・global action拒否テストを追加。`.\gradlew.bat :android-actions:testDebugUnitTest` 実行で `back`/`home`/`performGlobalActionForTesting` の `Unresolved reference` により10件がコンパイルエラーで失敗（Red確認）。
+  3. TDD Green: `AndroidActionExecutor.kt` に `back`/`home` を実装。`AccessibilityBridge.performGlobalAction(...)` という形で `AccessibilityService.GLOBAL_ACTION_BACK`/`GLOBAL_ACTION_HOME` のみを使用。snapshotId/nodeIdは取らず、呼び出し時点の `UiSnapshotEngine.currentSnapshot` を `previousSnapshotId` とする。成功後は `observeAfterGlobalAction` で1操作→1回の必ず成功する再観測を実施。previousSnapshotがnullの場合も `captureBridge()` でfresh snapshotを取得し、失敗時は `TIMEOUT` を返す。`.\gradlew.bat :android-actions:testDebugUnitTest` で26件全PASS、`.\gradlew.bat test` で全モジュールPASS、`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL。
+  4. 実装上の補足: `AccessibilityBridge` に `performGlobalAction` メソッドが存在しなかったため、`AndroidActionExecutor.kt` 内で拡張関数として `private fun AccessibilityBridge.performGlobalAction(action: Int): Boolean` を追加。これによりタスク指定どおり `AccessibilityBridge.performGlobalAction(GLOBAL_ACTION_BACK/GLOBAL_ACTION_HOME)` の形で呼び出しつつ、`android-accessibility` モジュールへの変更を回避した。テスト用seam `performGlobalActionForTesting` を追加し、JVM単体テストでグローバル操作の呼び出し action 定数を検証可能にした。
+
 - 2026-09-24 Kimi（追加タスク対応）:
   1. `TASK.md` の目的・アーキテクチャ不変条件・追加タスク（2026-09-24）・設計判断（2026-09-24 Claudeエントリ）を読み込み着手。
   2. TDD Red: `UiSnapshotEngineTest.kt` に `testRetry_returnsValueAfterTransientNulls` / `testRetry_returnsNullAfterAllAttemptsFail` を追加。`UiSnapshotEngine.retry(...)` が未実装のため `.&gradlew.bat :android-snapshot:testDebugUnitTest` が `Unresolved reference 'retry'` で失敗（Redを確認）。
@@ -280,6 +286,24 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
     - コマンド: `.\gradlew.bat assembleDebug`
     - 結果: BUILD SUCCESSFUL（210 actionable tasks、app-debug.apk生成まで確認）。
 
+- M2 ツール拡張 WU-2（back/home）テスト（2026-09-29・担当Kimi）:
+  - 実行環境: OS: Windows 11 Home (amd64) / JDK: OpenJDK 21.0.10 (LTS) / Gradle: 9.6.0 / AGP: 9.4.0 / Kotlin: 2.4.20
+  - TDD Red確認:
+    - コマンド: `.\gradlew.bat :android-actions:testDebugUnitTest`
+    - 結果: `AndroidActionExecutor.back`/`home` メソッドおよび `performGlobalActionForTesting` seam が未実装のため、テストコンパイル時に `Unresolved reference` エラー（`back`、`home`、`performGlobalActionForTesting`）。`AndroidActionExecutorTest` 26件中10件がコンパイルエラーで失敗（Red確認）。既存16件（click 2件 + longClick 6件 + scroll 8件）はコンパイル可能なまま。
+  - TDD Green確認:
+    - コマンド: `.\gradlew.bat :android-actions:testDebugUnitTest`
+    - 結果: BUILD SUCCESSFUL。`AndroidActionExecutorTest` 26件全PASS（failures=0, errors=0）。内訳: 既存16件 + 新規backテスト5件（not-connected/global-action-rejected/success/fresh-capture-failure-TIMEOUT/fresh-capture-failure-FAILED） + 新規homeテスト5件（not-connected/global-action-rejected/success/fresh-capture-failure-TIMEOUT/fresh-capture-failure-FAILED）。
+      - `testBack_success_performsGlobalActionBackAndReturnsFreshSnapshot`: `GLOBAL_ACTION_BACK` が呼ばれ、fresh snapshot (`snap_000002`) が返ることを確認。
+      - `testHome_success_performsGlobalActionHomeAndReturnsFreshSnapshot`: `GLOBAL_ACTION_HOME` が呼ばれ、fresh snapshot (`snap_000002`) が返ることを確認。
+      - `testBack_globalActionRejected_returnsFailed` / `testHome_globalActionRejected_returnsFailed`: `performGlobalAction` がfalseを返した場合、`FAILED` ステータスで安全に終了。
+      - `testBack_freshCaptureFailure_withoutUiEvent_returnsTimeout` / `testHome_freshCaptureFailure_withoutUiEvent_returnsTimeout`: UIイベントなしでfresh captureが失敗した場合、`TIMEOUT` を返す。
+      - `testBack_freshCaptureFailure_withUiEvent_returnsFailed` / `testHome_freshCaptureFailure_withUiEvent_returnsFailed`: UIイベントありでfresh captureが失敗した場合、`FAILED` を返す。
+    - コマンド: `.\gradlew.bat test`
+    - 結果: BUILD SUCCESSFUL。全モジュール単体テストPASS（android-actions 26件、android-snapshot 6件、structured-tool-api 14件、合計46件）。
+    - コマンド: `.\gradlew.bat assembleDebug`
+    - 結果: BUILD SUCCESSFUL（210 actionable tasks、app-debug.apk生成まで確認）。
+
 - M1 Structured Tool API 追加タスク（2026-09-27〜2026-09-28）テスト:
   - 実行環境: OS: Windows 11 Home (amd64) / JDK: OpenJDK 21.0.10 (LTS) / Gradle: 9.6.0 / AGP: 9.4.0 / Kotlin: 2.4.20
   - WU-1: `.\gradlew.bat projects` で `:structured-tool-api` 認識確認。`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL（空の新規モジュールを含む全プロジェクトがビルド可能）。
@@ -345,8 +369,11 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
     - TDD Red→Green証跡を記録。`AndroidActionExecutorTest` 16件全PASS（既存click 2件 + longClick 6件 + scroll 8件）。`.&gradlew.bat test` 全モジュールPASS、`.&gradlew.bat assembleDebug` BUILD SUCCESSFUL。
     - コミット: `feat(android-actions): WU-1 add longClick/scroll actions with TDD`（ブランチ最新コミット）。
 - 未対応・次工程:
-  - M2 WU-2: `back()`/`home()` 実装＋テスト。`AndroidActionExecutor.kt` にグローバル操作メソッドを追加（`performGlobalAction(GLOBAL_ACTION_BACK/GLOBAL_ACTION_HOME)`のみ使用）。fresh capture失敗時のFAILED/TIMEOUT透過テストも必須。対象ファイルは `AndroidActionExecutor.kt` と `AndroidActionExecutorTest.kt` のみ（WU-1完了後、同一ファイルの継続編集）。
-  - ファイル所有権: WU-2 着手時に `TASK.md` の対象ファイル宣言を更新すること。
-  - コミットはWU-8対応の1件を実施（`test(structured-tool-api): WU-8 tighten click/observe contract tests`）。push/PR作成はしない（ユーザー指示）。
-- 次の担当者: Codex（品質ゲート再レビュー）
-- 次の行動: CodexがM1 Structured Tool APIのWU-8実装結果を品質ゲート再レビューし、判定を記録する。レビュー材料として、WU-8のコミット、`structured-tool-api`のテスト14件全PASS、全体`test`/`assembleDebug`成功を用いる。
+  - M2 WU-2（back/home、2026-09-29・担当Kimi）:
+    - `AndroidActionExecutor.kt` に `back`/`home` メソッドを追加。`AccessibilityBridge.performGlobalAction(...)` という形で `GLOBAL_ACTION_BACK`/`GLOBAL_ACTION_HOME` のみを使用。snapshotId/nodeIdは取らず、呼び出し時点の `UiSnapshotEngine.currentSnapshot` を `previousSnapshotId` とする。
+    - 成功後は `observeAfterGlobalAction` で1操作→1回の必ず成功する再観測を実施。fresh capture失敗時は `FAILED`/`TIMEOUT` を透過。
+    - `AndroidActionExecutorTest.kt` に back/home のグローバル操作実行・fresh observation・fresh capture失敗（TIMEOUT/FAILED）・未接続・global action拒否テストを追加。テスト用seam `performGlobalActionForTesting` を追加。
+    - TDD Red→Green証跡を記録。`AndroidActionExecutorTest` 26件全PASS（既存click 2件 + longClick 6件 + scroll 8件 + back 5件 + home 5件）。`.\gradlew.bat test` 全モジュールPASS、`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL。
+  - M2 WU-3: Structured Tool API 層のインターフェース拡張 — `StructuredToolApi.kt` に `longClick`/`scroll`/`back`/`home` の4メソッドを追加し、`tools` カタログを6件化。`ToolDefinition.kt` で必要な入出力スキーマ拡張。対象ファイルは `structured-tool-api/src/main/java/dev/rancher/tool/api/StructuredToolApi.kt`、`ToolDefinition.kt`、および対応するテスト `StructuredToolApiTest.kt` / `SchemaDefinitionTest.kt`。WU-2完了後に着手。
+- 次の担当者: Kimi（M2 WU-3: Structured Tool API インターフェース拡張）
+- 次の行動: WU-3 をTDD Red→Greenで実装し、`structured-tool-api` のテストが全PASSすることを確認。完了後はCodex品質ゲートレビューへ。
