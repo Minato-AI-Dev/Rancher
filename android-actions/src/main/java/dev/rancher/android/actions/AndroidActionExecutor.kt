@@ -4,12 +4,15 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import dev.rancher.android.accessibility.AccessibilityBridge
+import dev.rancher.android.accessibility.AccessibilitySignal
 import dev.rancher.android.snapshot.NodeResolution
 import dev.rancher.android.snapshot.UiSnapshotEngine
 import dev.rancher.core.model.ToolResult
 import dev.rancher.core.model.ToolStatus
+import dev.rancher.core.model.UiSnapshot
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
 
@@ -17,6 +20,29 @@ object AndroidActionExecutor {
     private const val TAG = "RancherActions"
     private const val UI_CHANGE_TIMEOUT_MS = 1_800L
     private const val UI_SETTLE_DELAY_MS = 140L
+
+    // 単体テスト用の注入ポイント（本番ではnull）。JVMテストでAndroidフレームワークに依存しない
+    // 安全契約・fresh observationの検証を行うために必要（M1の既知課題を踏まえたseam）。
+    internal var isConnectedForTesting: (() -> Boolean)? = null
+    internal var resolveForTesting: ((String, Int) -> NodeResolution)? = null
+    internal var performActionForTesting: ((AccessibilityNodeInfo, Int) -> Boolean)? = null
+    internal var captureForTesting: (() -> UiSnapshot?)? = null
+    internal var eventsForTesting: (() -> Flow<AccessibilitySignal>)? = null
+
+    private fun isConnectedBridge(): Boolean =
+        isConnectedForTesting?.invoke() ?: AccessibilityBridge.isConnected()
+
+    private fun resolveBridge(snapshotId: String, nodeId: Int): NodeResolution =
+        resolveForTesting?.invoke(snapshotId, nodeId) ?: UiSnapshotEngine.resolve(snapshotId, nodeId)
+
+    private fun performActionBridge(node: AccessibilityNodeInfo, action: Int): Boolean =
+        performActionForTesting?.invoke(node, action) ?: (node.isEnabled && node.performAction(action))
+
+    private suspend fun captureBridge(): UiSnapshot? =
+        captureForTesting?.invoke() ?: UiSnapshotEngine.capture()
+
+    private fun uiChangeEvents(): Flow<AccessibilitySignal> =
+        eventsForTesting?.invoke() ?: AccessibilityBridge.events
 
     // 【安全性・誤操作防止: 古い画面情報（Stale Snapshot）に対する操作の即時遮断】
     // 操作対象として指定された snapshotId が最新画面（currentSnapshot）と異なる場合や、
@@ -130,6 +156,232 @@ object AndroidActionExecutor {
                 startedAt = startedAt,
             )
         }
+    }
+
+    // 【安全性・誤操作防止: 長押し（longClick）もclickと同じStale Snapshot保護を適用】
+    // 指定されたsnapshotId/nodeIdが最新画面と一致しない、または画面要素のfingerprintが一致しない場合は
+    // 操作を実行せずSTALE_SNAPSHOTで安全に終了します。
+    suspend fun longClick(snapshotId: String, nodeId: Int): ToolResult {
+        val startedAt = System.currentTimeMillis()
+        val previousSnapshot = UiSnapshotEngine.currentSnapshot.value
+        val previousSnapshotId = previousSnapshot?.id
+
+        if (previousSnapshotId != snapshotId) {
+            return result(
+                status = ToolStatus.STALE_SNAPSHOT,
+                message = "Snapshot $snapshotId is no longer current.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+        }
+
+        if (!isConnectedBridge()) {
+            return result(
+                status = ToolStatus.USER_ACTION_REQUIRED,
+                message = "Enable Rancher AccessibilityService first.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+        }
+
+        val resolution = resolveBridge(snapshotId, nodeId)
+        val node = when (resolution) {
+            NodeResolution.StaleSnapshot -> return result(
+                status = ToolStatus.STALE_SNAPSHOT,
+                message = "The current Android UI no longer matches the selected snapshot node.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+            NodeResolution.NotFound -> return result(
+                status = ToolStatus.NOT_FOUND,
+                message = "Node #$nodeId could not be resolved in the current UI.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+            is NodeResolution.Found -> resolution.node
+        }
+
+        val label = node.text?.toString()
+            ?: node.contentDescription?.toString()
+            ?: node.viewIdResourceName
+            ?: "#${nodeId}"
+
+        val longClicked = try {
+            performActionBridge(node, AccessibilityNodeInfo.ACTION_LONG_CLICK)
+        } finally {
+            node.recycleSafely()
+        }
+
+        if (!longClicked) {
+            Log.w(TAG, "LONG_CLICK failed snapshot=$snapshotId node=$nodeId label=$label")
+            return result(
+                status = ToolStatus.FAILED,
+                message = "ACTION_LONG_CLICK was rejected for node #$nodeId ($label).",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+        }
+
+        Log.i(TAG, "LONG_CLICK snapshot=$snapshotId node=$nodeId label=$label")
+        return observeAfterAction(
+            snapshotId = snapshotId,
+            nodeId = nodeId,
+            label = label,
+            previousSnapshot = previousSnapshot,
+            previousSnapshotId = previousSnapshotId,
+            startedAt = startedAt,
+            actionName = "Long click",
+        )
+    }
+
+    // 【安全性・誤操作防止: スクロール（scroll）もclickと同じStale Snapshot保護を適用】
+    // さらに、対象ノードがscrollableでない場合はスクロールを実行せずNOT_SCROLLABLEで安全に拒絶します。
+    suspend fun scroll(snapshotId: String, nodeId: Int, direction: String): ToolResult {
+        val startedAt = System.currentTimeMillis()
+        val previousSnapshot = UiSnapshotEngine.currentSnapshot.value
+        val previousSnapshotId = previousSnapshot?.id
+
+        if (previousSnapshotId != snapshotId) {
+            return result(
+                status = ToolStatus.STALE_SNAPSHOT,
+                message = "Snapshot $snapshotId is no longer current.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+        }
+
+        if (!isConnectedBridge()) {
+            return result(
+                status = ToolStatus.USER_ACTION_REQUIRED,
+                message = "Enable Rancher AccessibilityService first.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+        }
+
+        val targetNode = previousSnapshot.nodes.find { it.id == nodeId }
+        if (targetNode != null && !targetNode.scrollable) {
+            return result(
+                status = ToolStatus.NOT_SCROLLABLE,
+                message = "Node #$nodeId is not scrollable.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+        }
+
+        val scrollAction = when (direction.lowercase()) {
+            "forward" -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+            "backward" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            else -> return result(
+                status = ToolStatus.FAILED,
+                message = "Invalid scroll direction '$direction'. Use 'forward' or 'backward'.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+        }
+
+        val resolution = resolveBridge(snapshotId, nodeId)
+        val node = when (resolution) {
+            NodeResolution.StaleSnapshot -> return result(
+                status = ToolStatus.STALE_SNAPSHOT,
+                message = "The current Android UI no longer matches the selected snapshot node.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+            NodeResolution.NotFound -> return result(
+                status = ToolStatus.NOT_FOUND,
+                message = "Node #$nodeId could not be resolved in the current UI.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+            is NodeResolution.Found -> resolution.node
+        }
+
+        val label = node.text?.toString()
+            ?: node.contentDescription?.toString()
+            ?: node.viewIdResourceName
+            ?: "#${nodeId}"
+
+        val scrolled = try {
+            performActionBridge(node, scrollAction)
+        } finally {
+            node.recycleSafely()
+        }
+
+        if (!scrolled) {
+            Log.w(TAG, "SCROLL failed snapshot=$snapshotId node=$nodeId direction=$direction label=$label")
+            return result(
+                status = ToolStatus.FAILED,
+                message = "${scrollActionName(direction)} was rejected for node #$nodeId ($label).",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+        }
+
+        Log.i(TAG, "SCROLL snapshot=$snapshotId node=$nodeId direction=$direction label=$label")
+        return observeAfterAction(
+            snapshotId = snapshotId,
+            nodeId = nodeId,
+            label = label,
+            previousSnapshot = previousSnapshot,
+            previousSnapshotId = previousSnapshotId,
+            startedAt = startedAt,
+            actionName = scrollActionName(direction),
+        )
+    }
+
+    // 【安全性・信頼性確保: 操作後の新しい画面状態の再取得（Fresh Observation）】
+    // click/longClick/scroll いずれも共通で、「1操作→1回の必ず成功する再観測」を行います。
+    // テスト用の events/capture seam を使えるよう、longClick/scroll からはこちらを呼びます。
+    private suspend fun observeAfterAction(
+        snapshotId: String,
+        nodeId: Int,
+        label: String,
+        previousSnapshot: UiSnapshot,
+        previousSnapshotId: String,
+        startedAt: Long,
+        actionName: String,
+    ): ToolResult {
+        val targetPackage = previousSnapshot.packageName
+        val eventObserved = try {
+            withTimeout(UI_CHANGE_TIMEOUT_MS) {
+                uiChangeEvents().first { signal ->
+                    signal.packageName == targetPackage && signal.eventType in UI_CHANGE_EVENT_TYPES
+                }
+            }
+            true
+        } catch (_: TimeoutCancellationException) {
+            false
+        }
+
+        delay(UI_SETTLE_DELAY_MS)
+        val newSnapshot = captureBridge()
+
+        return when {
+            newSnapshot == null -> result(
+                status = if (eventObserved) ToolStatus.FAILED else ToolStatus.TIMEOUT,
+                message = "$actionName executed, but Rancher could not capture a fresh UI snapshot.",
+                previousSnapshotId = previousSnapshotId,
+                startedAt = startedAt,
+            )
+            else -> result(
+                status = ToolStatus.SUCCESS,
+                message = if (eventObserved) {
+                    "$actionName executed and a fresh snapshot was captured."
+                } else {
+                    "$actionName executed; no target-app UI event arrived before timeout, so Rancher refreshed explicitly."
+                },
+                previousSnapshotId = previousSnapshotId,
+                newSnapshotId = newSnapshot.id,
+                startedAt = startedAt,
+            )
+        }
+    }
+
+    private fun scrollActionName(direction: String) = when (direction.lowercase()) {
+        "forward" -> "ACTION_SCROLL_FORWARD"
+        "backward" -> "ACTION_SCROLL_BACKWARD"
+        else -> "SCROLL"
     }
 
     private fun result(

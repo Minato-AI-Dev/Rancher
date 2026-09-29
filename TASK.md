@@ -1,7 +1,7 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU分解完了、Kimi実装中）
-- 現在の担当: Kimi（WU-1から順次実装）
+- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU-1完了、WU-2待ち）
+- 現在の担当: Kimi（WU-2から順次実装）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
 - 更新日: 2026-09-29
@@ -201,6 +201,12 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
 - 2026-09-28 Codex（品質ゲート最終再判定、`model_reasoning_effort=low`）: 判定「PASS（例外つきPASS）」。例外=ユーザー承認済みの既知課題（fingerprint不一致／click後fresh capture失敗のJVMテスト不足、`.memory/knowledge/engine-test-seams-gap.md`）。全文は`%TEMP%\codex_m1_review3.txt`。軽微事項: `StructuredToolApiTest`クラスKDocが古い「WU-3 Red-phase tests」表記のまま（非ブロッキング）。
 
 ## 作業履歴
+- 2026-09-29 Kimi（M2 ツール拡張 WU-1: longClick/scroll）:
+  1. `TASK.md` の M2 追加タスクセクション・WU-1 担当範囲・対象ファイルを読み込み着手。`AndroidActionExecutor.kt`、`ToolResult.kt`、`AndroidActionExecutorTest.kt` のみ編集。
+  2. TDD Red: `ToolResult.kt` に `ToolStatus.NOT_SCROLLABLE` を追加。`AndroidActionExecutor.kt` に `longClick`/`scroll` のシグネチャとテスト用seamを追加し、中身は `TODO` のまま。`AndroidActionExecutorTest.kt` に longClick/scroll の安全契約・正常系・fresh capture失敗テストを追加。`.\gradlew.bat :android-actions:testDebugUnitTest` 実行で 16件中14件が `kotlin.NotImplementedError` で失敗（Red確認）。
+  3. TDD Green: `AndroidActionExecutor.kt` に `longClick`/`scroll` を実装。`ACTION_LONG_CLICK`/`ACTION_SCROLL_FORWARD`/`ACTION_SCROLL_BACKWARD` のみ使用。click と同じ snapshotId 一致確認・fingerprint 照合（`resolveBridge` 経由）・`STALE_SNAPSHOT`/`NOT_FOUND` 契約を踏襲。scroll は対象ノードの `scrollable==false` の場合 `NOT_SCROLLABLE` で安全に拒絶。成功後は `observeAfterAction` で1操作→1回の必ず成功する再観測を実施。`.\gradlew.bat :android-actions:testDebugUnitTest` で16件全PASS、`.\gradlew.bat test` で全モジュールPASS、`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL。
+  4. 実装上の補足: JVM単体テストでAndroidフレームワークに依存しない安全契約検証を可能にするため、`AndroidActionExecutor` に `isConnectedForTesting`/`resolveForTesting`/`performActionForTesting`/`captureForTesting`/`eventsForTesting` のテスト用seamを追加（本番ではnull、テストでのみ差し替え）。また `android-actions/build.gradle.kts` に `testOptions.unitTests.isReturnDefaultValues = true` を追加し、未mockの `AccessibilityNodeInfo()` コンストラクタをJVM上でダミー生成可能にした。これらはM1で既知課題とされていた「fingerprint不一致・click後fresh capture失敗のJVM単体テスト不足」に対する対応でもある。
+
 - 2026-09-24 Kimi（追加タスク対応）:
   1. `TASK.md` の目的・アーキテクチャ不変条件・追加タスク（2026-09-24）・設計判断（2026-09-24 Claudeエントリ）を読み込み着手。
   2. TDD Red: `UiSnapshotEngineTest.kt` に `testRetry_returnsValueAfterTransientNulls` / `testRetry_returnsNullAfterAllAttemptsFail` を追加。`UiSnapshotEngine.retry(...)` が未実装のため `.&gradlew.bat :android-snapshot:testDebugUnitTest` が `Unresolved reference 'retry'` で失敗（Redを確認）。
@@ -260,6 +266,20 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
 - Test 8 (password redaction):
   - コマンド: `.\gradlew.bat :android-snapshot:testDebugUnitTest`
   - 結果: `UiSnapshotEngineTest.testPasswordRedaction_replacesPasswordWithRedactedText` (PASS), `testPasswordRedaction_inUiNodeModel` (PASS)。password=true ノードの text および contentDescription が平文を出さず `[REDACTED]` になることを確認。レビュー修正後も4件PASS確認。
+- M2 ツール拡張 WU-1（longClick/scroll）テスト（2026-09-29・担当Kimi）:
+  - 実行環境: OS: Windows 11 Home (amd64) / JDK: OpenJDK 21.0.10 (LTS) / Gradle: 9.6.0 / AGP: 9.4.0 / Kotlin: 2.4.20
+  - TDD Red確認:
+    - コマンド: `.\gradlew.bat :android-actions:testDebugUnitTest`
+    - 結果: `AndroidActionExecutor.longClick`/`scroll` が `TODO` のため、`AndroidActionExecutorTest` 16件中14件が `kotlin.NotImplementedError` で失敗（Red確認）。既存clickテスト2件はPASS。
+    - 補足: テスト実行前に `AndroidActionExecutor` にテスト用seam（`isConnectedForTesting`/`resolveForTesting`/`performActionForTesting`/`captureForTesting`/`eventsForTesting`）を追加。JVM単体テストでAndroidフレームワーク（AccessibilityNodeInfo/AccessibilityBridge.events）に依存しない安全契約検証を可能にするため（M1の既知課題に対応）。また `android-actions/build.gradle.kts` に `testOptions.unitTests.isReturnDefaultValues = true` を追加（未mockのAndroidメソッドにデフォルト値を返させ、JVM上での `AccessibilityNodeInfo()` ダミー生成を可能にするため）。
+  - TDD Green確認:
+    - コマンド: `.\gradlew.bat :android-actions:testDebugUnitTest`
+    - 結果: BUILD SUCCESSFUL。`AndroidActionExecutorTest` 16件全PASS（failures=0, errors=0）。内訳: 既存clickテスト2件 + 新規longClickテスト6件（stale/null/not-found/success/fresh-capture-failure-TIMEOUT/fresh-capture-failure-FAILED） + 新規scrollテスト8件（stale/null/not-scrollable/not-found/success-forward/success-backward/fresh-capture-failure-TIMEOUT/fresh-capture-failure-FAILED）。
+    - コマンド: `.\gradlew.bat test`
+    - 結果: BUILD SUCCESSFUL。全モジュール単体テストPASS（android-actions 16件、android-snapshot 6件、structured-tool-api 14件）。
+    - コマンド: `.\gradlew.bat assembleDebug`
+    - 結果: BUILD SUCCESSFUL（210 actionable tasks、app-debug.apk生成まで確認）。
+
 - M1 Structured Tool API 追加タスク（2026-09-27〜2026-09-28）テスト:
   - 実行環境: OS: Windows 11 Home (amd64) / JDK: OpenJDK 21.0.10 (LTS) / Gradle: 9.6.0 / AGP: 9.4.0 / Kotlin: 2.4.20
   - WU-1: `.\gradlew.bat projects` で `:structured-tool-api` 認識確認。`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL（空の新規モジュールを含む全プロジェクトがビルド可能）。
@@ -317,6 +337,16 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
 - 未対応・次工程:
   - 実機（MIUI/Android 16）での再検証は未実施（Emulator/Pixel_8a 上の単体テスト・ビルド検証まで）。ユーザー指示により今回は省略、将来機会があれば実施。
   - 将来課題（`.memory/knowledge/`へ記録推奨）: 全リトライ失敗時に`_currentSnapshot`を明示的に無効化する設計、`capture()`配線を直接検証する回帰テストの追加。
+  - M2 ツール拡張 WU-1（longClick/scroll、2026-09-29・担当Kimi）:
+    - `ToolResult.kt` に `ToolStatus.NOT_SCROLLABLE` を追加。
+    - `AndroidActionExecutor.kt` に `longClick`/`scroll` メソッドを追加。clickと同じ snapshotId 一致確認・fingerprint照合（`resolveBridge`）・`STALE_SNAPSHOT`/`NOT_FOUND` 契約を踏襲。`scroll` は対象ノードの `scrollable==false` の場合 `NOT_SCROLLABLE` で安全に拒絶。成功後は `observeAfterAction` で1操作→1回の必ず成功する再観測を実施。
+    - `AndroidActionExecutorTest.kt` に longClick/scroll の安全契約・正常系・fresh capture失敗（TIMEOUT/FAILED）テストを追加。JVM単体テストでAndroidフレームワークに依存しない安全契約検証のため、テスト用seam（`isConnectedForTesting`/`resolveForTesting`/`performActionForTesting`/`captureForTesting`/`eventsForTesting`）を追加。
+    - `android-actions/build.gradle.kts` に `testOptions.unitTests.isReturnDefaultValues = true` を追加し、`AccessibilityNodeInfo()` ダミー生成を可能にした。
+    - TDD Red→Green証跡を記録。`AndroidActionExecutorTest` 16件全PASS（既存click 2件 + longClick 6件 + scroll 8件）。`.&gradlew.bat test` 全モジュールPASS、`.&gradlew.bat assembleDebug` BUILD SUCCESSFUL。
+    - コミット: `feat(android-actions): WU-1 add longClick/scroll actions with TDD`（ブランチ最新コミット）。
+- 未対応・次工程:
+  - M2 WU-2: `back()`/`home()` 実装＋テスト。`AndroidActionExecutor.kt` にグローバル操作メソッドを追加（`performGlobalAction(GLOBAL_ACTION_BACK/GLOBAL_ACTION_HOME)`のみ使用）。fresh capture失敗時のFAILED/TIMEOUT透過テストも必須。対象ファイルは `AndroidActionExecutor.kt` と `AndroidActionExecutorTest.kt` のみ（WU-1完了後、同一ファイルの継続編集）。
+  - ファイル所有権: WU-2 着手時に `TASK.md` の対象ファイル宣言を更新すること。
   - コミットはWU-8対応の1件を実施（`test(structured-tool-api): WU-8 tighten click/observe contract tests`）。push/PR作成はしない（ユーザー指示）。
 - 次の担当者: Codex（品質ゲート再レビュー）
 - 次の行動: CodexがM1 Structured Tool APIのWU-8実装結果を品質ゲート再レビューし、判定を記録する。レビュー材料として、WU-8のコミット、`structured-tool-api`のテスト14件全PASS、全体`test`/`assembleDebug`成功を用いる。
