@@ -1,7 +1,7 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: レビュー中（M2: ツール拡張 longClick/scroll/back/home — WU-1〜WU-6実装完了、Codex品質ゲートレビュー待ち。実機/Emulator動作確認はユーザー判断により保留）
-- 現在の担当: Codex（品質ゲートレビュー）
+- 状態: 完了（M2: ツール拡張 longClick/scroll/back/home — Codex品質ゲート「PASS（例外付き）」。実機/Emulator動作確認は将来課題として保留）
+- 現在の担当: なし（次回着手時に保留事項を確認）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
 - 更新日: 2026-09-29
@@ -524,5 +524,11 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
 
 - M2 WU-5（完了）: Debug Overlay / Developer Harness への4ツールUI統合。`app/DebugOverlayController.kt`、`debug-harness/RancherDevHarnessScreen.kt` に longClick/scroll/back/home のボタン・呼び出しを追加（UIデザイン変更なし）。`.\gradlew.bat :app:assembleDebug` および `.\gradlew.bat :debug-harness:assembleDebug` が BUILD SUCCESSFUL。
 - WU-5後の確認工程（未実施、2026-09-29 ユーザー判断により保留）: Emulatorまたは実機で4ツール（longClick/scroll/back/home）それぞれについて observe→操作→fresh snapshot の成功をログ・スクリーンショットで確認し、TASK.mdテスト結果へ記録する工程。M2受入条件「4ツールいずれもEmulatorまたは実機で成功を確認」はこの時点で未充足。ユーザーの指示により実機/Emulator検証は後回しにし、先にCodex品質ゲートレビューへ進める（レビュー材料は単体テスト58件全PASS・`assembleDebug`成功・実装コードの静的確認とする）。
-- 次の担当者: Codex（品質ゲートレビュー）
-- 次の行動: CodexがM2 WU-1〜WU-6の実装（単体テスト58件全PASS、`.\gradlew.bat test`/`assembleDebug`成功、既存click/UiSnapshotEngine無変更）を品質ゲートレビューし、判定を記録する。実機/Emulatorでの4ツール動作確認は既知の未完了事項としてCodexへ引き継ぐ。
+- 2026-09-29 Codex（M2品質ゲートレビュー、`model_reasoning_effort=low`、対象コミット`2831762`〜`e95d018`の計7件）: 判定「**PASS（例外付き）**」。
+  - Gate 3（実装）PASS: `UiSnapshotEngine.kt`・既存`AndroidActionExecutor.click()`は無変更を確認。`longClick`/`scroll`はSTALE_SNAPSHOT/NOT_FOUND契約を踏襲、`scroll`はscrollable=false時にNOT_SCROLLABLEで実行前拒絶。使用アクションは指定API（ACTION_LONG_CLICK/ACTION_SCROLL_FORWARD・BACKWARD/GLOBAL_ACTION_BACK・HOME）のみ。4ツールとも成功後fresh capture、TIMEOUT/FAILEDテストも4ツール全てに存在。API層(`AndroidStructuredToolApi`)は1回委譲・無加工透過のみ。TASK.mdにTDD Red→Green証跡（コマンド・失敗内容・成功件数）が記録済み。
+  - 宣言外の3変更（`android-actions/build.gradle.kts`のtestOptions追加、WU-3での`StructuredToolApiTest.kt`既存テスト更新、`AndroidStructuredToolApi.kt`への一時ダミー実装）はいずれも妥当と判断（テスト専用設定・仕様変更に伴う必須更新・WU-4で本実装に置換済みでTODO残存なし）。
+  - Gate 4（レビュー）: Codex環境のサンドボックス制約でAndroid SDKへアクセスできず`.\gradlew.bat test`/`assembleDebug`の独立再実行は不可（`BUILD FAILED`ではなくSDKアクセス拒否によるタスク未達）。代わりに既存JUnit XML結果を直接確認: `AndroidActionExecutorTest`26件・`UiSnapshotEngineTest`6件・`SchemaDefinitionTest`7件・`StructuredToolApiTest`19件、合計58件でfailures=0/errors=0。`app-debug.apk`存在（2026-09-29 21:19更新、12,215,492 bytes）も確認。※このgradlew再実行はClaudeが本セッション内で既に独立実行し成功確認済み（本ファイル該当WU記録参照）であるため、Codex環境の制約による欠陥ではないと判断。
+  - 未充足の受入条件（4ツールのEmulator/実機成功確認）はユーザー承認済みの既知の保留事項として扱い、PASSを妨げない例外とする。
+  - 非ブロッキング指摘: `AndroidActionExecutor.kt`のfresh-observation helperが`click`用と`longClick`/`scroll`/`back`/`home`用の2系統に分かれており重複がある。「既存clickは変更しない」制約下では妥当な設計だが、将来のリファクタリング候補として記録。
+- 次の担当者: なし（M2完了）。実機/Emulator動作確認は将来課題として保留継続。
+- 次の行動: 特になし。次にRancherへ着手する際は、保留中の「M2実機/Emulator動作確認」と「PR #3とfeat/i18n-ja-enブランチの重複コミット整理」を確認すること。
