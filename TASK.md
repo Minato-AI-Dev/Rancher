@@ -1,7 +1,7 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU-1完了、WU-2完了、WU-3完了、WU-4完了）
-- 現在の担当: Kimi（WU-3から順次実装）
+- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU-1完了、WU-2完了、WU-3完了、WU-4完了、WU-6完了。WU-5進行中）
+- 現在の担当: WU-6文書作成担当（完了）、WU-5は別担当
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
 - 更新日: 2026-09-29
@@ -442,8 +442,22 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
   4. TDD Green確認: `.\gradlew.bat :structured-tool-api:testDebugUnitTest` BUILD SUCCESSFUL。`StructuredToolApiTest` 19件全PASS、`SchemaDefinitionTest` 7件全PASS、合計26件（failures=0, errors=0）。
   5. 回帰確認: `.\gradlew.bat test` BUILD SUCCESSFUL（全モジュール単体テストPASS。android-actions 26件、android-snapshot 6件、structured-tool-api 26件）。`.\gradlew.bat assembleDebug` BUILD SUCCESSFUL（210 actionable tasks、app-debug.apk生成まで確認）。
 
+- 2026-09-29 Kimi（M2 ツール拡張 WU-6: ドキュメント整備）:
+  1. WU-4完了後に着手。対象ファイルは `docs/M2_TOOL_EXPANSION.md`（新規）、`README.md`（ツール一覧セクションのみ）、`TASK.md`（テスト結果欄・作業履歴欄のみ）。
+  2. `docs/M1_STRUCTURED_TOOL_API.md` のフォーマットを踏襲し、`docs/M2_TOOL_EXPANSION.md` を新規作成。内容：M2の目的・利用者・追加4ツール（longClick/scroll/back/home）の入出力スキーマ・安全原則（stale snapshot保護・fingerprint照合・NOT_SCROLLABLE拒絶・fresh observation・password redaction）・対象外（setText/screenshot等）・レイヤー境界・Key files・Verification。
+  3. `README.md` の `structured-tool-api` モジュール説明を6ツール（observe/click/longClick/scroll/back/home）に更新。`M1 Structured Tool API` セクションの下に `M2 Tool Expansion` セクションを追加し、6ツールの公開と `docs/M2_TOOL_EXPANSION.md` への参照を記載。
+  4. 実装との整合確認: `StructuredToolApi.kt` の `tools` カタログが6件（observe/click/longClick/scroll/back/home）であること、`longClick`/`scroll` の入力が `snapshotId`/`nodeId`（`scroll` はさらに `direction`）、`back`/`home` の入力がないこと、`ToolResult` の出力形状が5フィールド（status/message/previousSnapshotId/newSnapshotId/durationMs）であること、`ToolStatus.NOT_SCROLLABLE` が存在することを確認。
+  5. コミット: `docs: WU-6 add M2 tool expansion documentation`。
+
+- M2 WU-6 ドキュメント整備（2026-09-29・担当Kimi）:
+  - 対象ファイル: `docs/M2_TOOL_EXPANSION.md`（新規）、`README.md`（ツール一覧セクションのみ）、`TASK.md`（テスト結果欄・作業履歴欄のみ）。
+  - 実施内容:
+    - `docs/M2_TOOL_EXPANSION.md` を新規作成。M1文書フォーマットに従い、目的・利用者・追加4ツール（longClick/scroll/back/home）の入出力スキーマ・安全原則・対象外・レイヤー境界・Key files・Verificationを記載。
+    - `README.md` の `structured-tool-api` モジュール説明を6ツールに更新し、`M2 Tool Expansion` セクションを追加。
+    - 実装との整合確認: `StructuredToolApi.kt` の `tools` カタログが6件であること、`longClick`/`scroll`/`back`/`home` の入出力スキーマが実装と一致することを確認。
+  - コミット: `docs: WU-6 add M2 tool expansion documentation`。
+
 - M2 WU-5（任意）: Debug Overlay / Developer Harness への4ツールUI統合。`app/DebugOverlayController.kt`、`debug-harness/RancherDevHarnessScreen.kt` に longClick/scroll/back/home のボタン・呼び出しを追加（UIデザイン変更なし）。WU-4完了後に着手可。
-- M2 WU-6: M2 ドキュメント整備。`docs/M2_TOOL_EXPANSION.md` 新規作成または `docs/M1_STRUCTURED_TOOL_API.md` 更新、`README.md` のツール一覧を6件に更新。WU-4完了後に着手可（WU-5と並行可）。
 - WU-5後の確認工程（Claude実施）: Emulatorまたは実機で4ツール（longClick/scroll/back/home）それぞれについて observe→操作→fresh snapshot の成功をログ・スクリーンショットで確認し、TASK.mdテスト結果へ記録。これを欠くと受入条件「4ツールいずれもEmulatorまたは実機で成功を確認」を満たせない。未実施。
-- 次の担当者: Kimi（M2 WU-5/WU-6 または Codex品質ゲートレビュー）
-- 次の行動: WU-5/WU-6 の実装、または Codex による品質ゲートレビューへ進める。
+- 次の担当者: WU-5担当（別担当・進行中） → 完了後 Codex品質ゲートレビュー
+- 次の行動: WU-5 の完了待ち、完了後は Codex による品質ゲートレビューへ引き継ぐ。
