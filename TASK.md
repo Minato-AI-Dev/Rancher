@@ -1,7 +1,7 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 実装中（M2: ツール拡張 longClick/scroll/back/home — WU-1完了、WU-2完了、WU-3完了、WU-4完了、WU-5完了、WU-6完了）
-- 現在の担当: WU-6文書作成担当（完了）、WU-5は別担当
+- 状態: レビュー中（M2: ツール拡張 longClick/scroll/back/home — WU-1〜WU-6実装完了、Codex品質ゲートレビュー待ち。実機/Emulator動作確認はユーザー判断により保留）
+- 現在の担当: Codex（品質ゲートレビュー）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
 - 更新日: 2026-09-29
@@ -523,6 +523,6 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
   - コミット: `docs: WU-6 add M2 tool expansion documentation`。
 
 - M2 WU-5（完了）: Debug Overlay / Developer Harness への4ツールUI統合。`app/DebugOverlayController.kt`、`debug-harness/RancherDevHarnessScreen.kt` に longClick/scroll/back/home のボタン・呼び出しを追加（UIデザイン変更なし）。`.\gradlew.bat :app:assembleDebug` および `.\gradlew.bat :debug-harness:assembleDebug` が BUILD SUCCESSFUL。
-- WU-5後の確認工程（Claude実施・未実施）: Emulatorまたは実機で4ツール（longClick/scroll/back/home）それぞれについて observe→操作→fresh snapshot の成功をログ・スクリーンショットで確認し、TASK.mdテスト結果へ記録。これを欠くと受入条件「4ツールいずれもEmulatorまたは実機で成功を確認」を満たせない。
-- 次の担当者: Claude（Emulator/実機での4ツール動作確認） → 完了後 Codex品質ゲートレビュー
-- 次の行動: Claudeによる実機/Emulatorでの4ツール動作確認完了待ち、完了後は Codex による品質ゲートレビューへ引き継ぐ。
+- WU-5後の確認工程（未実施、2026-09-29 ユーザー判断により保留）: Emulatorまたは実機で4ツール（longClick/scroll/back/home）それぞれについて observe→操作→fresh snapshot の成功をログ・スクリーンショットで確認し、TASK.mdテスト結果へ記録する工程。M2受入条件「4ツールいずれもEmulatorまたは実機で成功を確認」はこの時点で未充足。ユーザーの指示により実機/Emulator検証は後回しにし、先にCodex品質ゲートレビューへ進める（レビュー材料は単体テスト58件全PASS・`assembleDebug`成功・実装コードの静的確認とする）。
+- 次の担当者: Codex（品質ゲートレビュー）
+- 次の行動: CodexがM2 WU-1〜WU-6の実装（単体テスト58件全PASS、`.\gradlew.bat test`/`assembleDebug`成功、既存click/UiSnapshotEngine無変更）を品質ゲートレビューし、判定を記録する。実機/Emulatorでの4ツール動作確認は既知の未完了事項としてCodexへ引き継ぐ。
