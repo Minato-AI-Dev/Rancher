@@ -11,12 +11,12 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import dev.rancher.android.accessibility.AccessibilityBridge
-import dev.rancher.android.actions.AndroidActionExecutor
 import dev.rancher.android.snapshot.UiSnapshotEngine
 import dev.rancher.core.model.ToolResult
 import dev.rancher.core.model.UiNode
 import dev.rancher.core.model.UiSnapshot
+import dev.rancher.tool.api.AndroidStructuredToolApi
+import dev.rancher.tool.api.ObserveToolResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -38,6 +38,7 @@ object DebugOverlayController {
     private var scope: CoroutineScope? = null
     private var collector: Job? = null
     private var status: ToolResult? = null
+    private val api = AndroidStructuredToolApi()
 
     private const val TAG = "RancherOverlay"
 
@@ -82,19 +83,12 @@ object DebugOverlayController {
             }
         }
 
-        // 【安全性・安定化処理: overlayのライフサイクル同期】
-        // MIUI等では省電力管理によりAccessibilityServiceが数十秒おきに再起動されることがあります。
-        // サービスが破棄されるとこのoverlay windowもシステム側で暗黙的に失われるため、
-        // サービスの消失を検知した時点でこのシングルトンの状態を確実にリセットします（rootViewを
-        // nullに戻さないと、次にshow()を呼んでも「既に表示中」と誤認して何も表示されなくなるため）。
         overlayScope.launch {
-            AccessibilityBridge.service.collectLatest { current ->
-                if (current == null) hide()
+            val result = api.observe()
+            if (result.status != dev.rancher.core.model.ToolStatus.SUCCESS) {
+                status = result.toToolResult()
+                render(service, panel, UiSnapshotEngine.currentSnapshot.value)
             }
-        }
-
-        overlayScope.launch {
-            UiSnapshotEngine.capture()
         }
     }
 
@@ -114,7 +108,7 @@ object DebugOverlayController {
     private fun render(service: AccessibilityService, panel: LinearLayout, snapshot: UiSnapshot?) {
         panel.removeAllViews()
 
-        panel.addView(text(service, "Rancher M0 Overlay", 17f, bold = true))
+        panel.addView(text(service, service.getString(R.string.overlay_title), 17f, bold = true))
         panel.addView(
             text(
                 service,
@@ -127,14 +121,38 @@ object DebugOverlayController {
             orientation = LinearLayout.HORIZONTAL
         }
         controls.addView(Button(service).apply {
-            text = "Refresh"
+            text = service.getString(R.string.button_refresh)
             setOnClickListener {
-                scope?.launch { UiSnapshotEngine.capture() }
+                scope?.launch {
+                    val result = api.observe()
+                    if (result.status != dev.rancher.core.model.ToolStatus.SUCCESS) {
+                        status = result.toToolResult()
+                        render(service, panel, UiSnapshotEngine.currentSnapshot.value)
+                    }
+                }
             }
         })
         controls.addView(Button(service).apply {
-            text = "Close"
+            text = service.getString(R.string.button_close)
             setOnClickListener { hide() }
+        })
+        controls.addView(Button(service).apply {
+            text = service.getString(R.string.button_back)
+            setOnClickListener {
+                scope?.launch {
+                    status = api.back()
+                    render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
+                }
+            }
+        })
+        controls.addView(Button(service).apply {
+            text = service.getString(R.string.button_home)
+            setOnClickListener {
+                scope?.launch {
+                    status = api.home()
+                    render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
+                }
+            }
         })
         panel.addView(controls)
 
@@ -149,7 +167,7 @@ object DebugOverlayController {
         }
 
         if (snapshot == null) {
-            panel.addView(text(service, "Tap Refresh while Android Settings is visible.", 13f))
+            panel.addView(text(service, service.getString(R.string.text_tap_refresh), 13f))
             return
         }
 
@@ -202,12 +220,49 @@ object DebugOverlayController {
 
             if (node.clickable) {
                 addView(Button(service).apply {
-                    text = "CLICK #${node.id}"
+                    text = service.getString(R.string.button_click_node, node.id)
                     isEnabled = node.enabled
                     setOnClickListener {
                         isEnabled = false
                         scope?.launch {
-                            status = AndroidActionExecutor.click(snapshotId, node.id)
+                            status = api.click(snapshotId, node.id)
+                            render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
+                        }
+                    }
+                })
+            }
+            if (node.longClickable) {
+                addView(Button(service).apply {
+                    text = service.getString(R.string.button_long_click_node, node.id)
+                    isEnabled = node.enabled
+                    setOnClickListener {
+                        isEnabled = false
+                        scope?.launch {
+                            status = api.longClick(snapshotId, node.id)
+                            render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
+                        }
+                    }
+                })
+            }
+            if (node.scrollable) {
+                addView(Button(service).apply {
+                    text = service.getString(R.string.button_scroll_forward_node, node.id)
+                    isEnabled = node.enabled
+                    setOnClickListener {
+                        isEnabled = false
+                        scope?.launch {
+                            status = api.scroll(snapshotId, node.id, "forward")
+                            render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
+                        }
+                    }
+                })
+                addView(Button(service).apply {
+                    text = service.getString(R.string.button_scroll_backward_node, node.id)
+                    isEnabled = node.enabled
+                    setOnClickListener {
+                        isEnabled = false
+                        scope?.launch {
+                            status = api.scroll(snapshotId, node.id, "backward")
                             render(service, rootView as? LinearLayout ?: return@launch, UiSnapshotEngine.currentSnapshot.value)
                         }
                     }
@@ -230,4 +285,12 @@ object DebugOverlayController {
 
     private fun dp(service: AccessibilityService, value: Int): Int =
         (value * service.resources.displayMetrics.density).toInt()
+
+    private fun ObserveToolResult.toToolResult(): ToolResult = ToolResult(
+        status = status,
+        message = message,
+        previousSnapshotId = null,
+        newSnapshotId = snapshot?.id,
+        durationMs = durationMs,
+    )
 }

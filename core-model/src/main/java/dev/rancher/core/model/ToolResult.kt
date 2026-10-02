@@ -8,6 +8,7 @@ enum class ToolStatus {
     REQUIRES_CONFIRMATION,
     USER_ACTION_REQUIRED,
     TIMEOUT,
+    NOT_SCROLLABLE,
 }
 
 data class ToolResult(

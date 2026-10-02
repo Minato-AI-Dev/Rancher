@@ -28,7 +28,20 @@
   - `AndroidActionExecutor.click` は、クリック実行後にターゲットアプリからの UI 変化イベント（`TYPE_WINDOW_STATE_CHANGED`, `TYPE_WINDOW_CONTENT_CHANGED` 等）を待機（最大1,800ms）。
   - UI 描画の安定（140ms delay）を待った後、自動的に `UiSnapshotEngine.capture()` を呼び出して新しいスナップショット（`previousSnapshotId` ≠ `newSnapshotId`）を生成・提供する。
 
-## 4. serviceInfo の動的再設定によるアクセシビリティ接続安定化
+## 4. capture() の一時的null吸収リトライと既知の残余リスク（2026-09-24追加、2026-09-26レビュー確定）
+
+- **背景・目的**:
+  - 実機（MIUI/Android 16）でクリック直後、画面遷移が完了するまでの一瞬 `rootInActiveWindow` が `null` を返すことがあり、`capture()` が黙って `null` を返してしまうと「1操作→1再観測」の原則が実機で静かに破られる。
+- **実装メカニズム**:
+  - `UiSnapshotEngine.capture()` は `AccessibilityBridge.currentRoot()` の取得を `retryForRoot()`（内部で汎用 `internal suspend fun <T> retry(attempts, delayMs, block)` を使用、3回・100ms間隔、最大約200ms）でリトライする。
+  - 全リトライ失敗時のみ `Log.w` で原因追跡可能なログを出して `null` を返す（従来は無言でnull）。
+- **既知の残余リスク（対応不要と判断した理由）**:
+  - 全リトライ失敗時、`_currentSnapshot` は更新されず旧snapshotが残ったままになる。Codexの品質ゲートレビュー（2026-09-26, コミット`7012fa9`対象）はこれを理由に一度 ESCALATE 判定を出した。
+  - Claudeの設計判断: この挙動（失敗時に`_currentSnapshot`を更新しない）は今回の修正で新規に生まれたものではなく、修正前から同一の終端状態である（今回の変更は「失敗と判定するまでの猶予を最大200ms広げた」だけ）。さらに `resolve()` のfingerprint照合（本ファイル「1. Stale Snapshot 保護」参照）が第二の防御層として既に存在し、画面が実際に変化していれば旧snapshotでの誤操作はそこで防止される。よってスコープ外の既存設計特性としてPASS扱いとした。
+  - **将来の改善候補**（次にこの領域を触るときに検討）: 全リトライ失敗時に `_currentSnapshot` を明示的に無効化し `resolve()` が即座に `StaleSnapshot` を返すようにする設計、および `retry()` 単体テストだけでなく `capture()` との配線を直接検証する回帰テストの追加。
+  - 実機（`fux8bevkxkdidat4`, MIUI/Android 16）でのクリック→自動再観測の再現確認は、USB切断のためこの修正では未実施（ユーザー判断により省略）。次回実機に触れる機会があれば優先的に検証すること。
+
+## 5. serviceInfo の動的再設定によるアクセシビリティ接続安定化
 
 - **背景・目的**:
   - 一部の Android バージョンやエミュレータ（API 36等）において、マニフェストや XML メタデータ定義のみではアクセシビリティサービスのバインドが外れたり、イベントが正しく通知されない事象が発生する。

@@ -3,7 +3,9 @@
 import dev.rancher.core.model.UiBounds
 import dev.rancher.core.model.UiNode
 import dev.rancher.core.model.UiSnapshot
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -69,5 +71,36 @@ class UiSnapshotEngineTest {
 
         val resolution = UiSnapshotEngine.resolve(snapshotId = "snap_old", nodeId = 1)
         assertEquals(NodeResolution.StaleSnapshot, resolution)
+    }
+
+    @Test
+    fun testRetry_returnsValueAfterTransientNulls() = runTest {
+        // TDD Red: verify the retry helper used by capture() eventually succeeds when root
+        // becomes available after a few transient nulls (mirrors real-device behavior after click).
+        var callCount = 0
+        val result = UiSnapshotEngine.retry(
+            attempts = 3,
+            delayMs = 10L,
+        ) {
+            callCount++
+            if (callCount < 3) null else "found"
+        }
+        assertEquals("found", result)
+        assertEquals(3, callCount)
+    }
+
+    @Test
+    fun testRetry_returnsNullAfterAllAttemptsFail() = runTest {
+        // TDD Red: verify retry helper does not loop forever and returns null when root stays null.
+        var callCount = 0
+        val result = UiSnapshotEngine.retry(
+            attempts = 3,
+            delayMs = 10L,
+        ) {
+            callCount++
+            null
+        }
+        assertNull(result)
+        assertEquals(3, callCount)
     }
 }

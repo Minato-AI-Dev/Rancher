@@ -10,6 +10,7 @@ import dev.rancher.core.model.UiSnapshot
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,12 +29,41 @@ object UiSnapshotEngine {
     private var currentHandles: Map<Int, NodeHandle> = emptyMap()
 
     suspend fun capture(): UiSnapshot? = withContext(Dispatchers.Default) {
-        val root = AccessibilityBridge.currentRoot() ?: return@withContext null
+        // 【信頼性向上: 一時的な rootInActiveWindow の null を短いリトライで吸収】
+        // クリック直後など、対象アプリのウィンドウ切り替えが完了するまでの一瞬
+        // rootInActiveWindow が null を返すことが実機で観測されています。
+        // そのまま諦めると「1操作→1再観測」の安全設計が静かに破られるため、
+        // 短い間隔で数回だけ再試行し、それでも取得できない場合のみ null を返します。
+        val root = retryForRoot() ?: run {
+            Log.w(TAG, "capture() failed: rootInActiveWindow remained null after retry")
+            return@withContext null
+        }
         try {
             buildSnapshot(root)
         } finally {
             root.recycleSafely()
         }
+    }
+
+    private suspend fun retryForRoot(): AccessibilityNodeInfo? = retry(
+        attempts = 3,
+        delayMs = 100L,
+        block = { AccessibilityBridge.currentRoot() },
+    )
+
+    // 汎用リトライヘルパー。テストから直接検証できるよう internal にしています。
+    internal suspend fun <T> retry(
+        attempts: Int,
+        delayMs: Long,
+        block: suspend () -> T?,
+    ): T? {
+        require(attempts >= 1) { "attempts must be >= 1" }
+        repeat(attempts) { attempt ->
+            val value = block()
+            if (value != null) return value
+            if (attempt < attempts - 1) delay(delayMs)
+        }
+        return null
     }
 
     // 【安全性・誤操作防止: 古い画面情報（Stale Snapshot）の検出と解決】

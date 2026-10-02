@@ -34,6 +34,7 @@ dependencies {
     implementation(project(":android-accessibility"))
     implementation(project(":android-snapshot"))
     implementation(project(":android-actions"))
+    implementation(project(":structured-tool-api"))
     implementation(project(":debug-harness"))
 
     implementation("androidx.core:core-ktx:1.17.0")

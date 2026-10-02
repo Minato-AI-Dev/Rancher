@@ -5,7 +5,7 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,14 +30,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.rancher.android.accessibility.AccessibilityBridge
-import dev.rancher.android.actions.AndroidActionExecutor
 import dev.rancher.android.snapshot.UiSnapshotEngine
 import dev.rancher.core.model.ToolResult
 import dev.rancher.core.model.UiNode
+import dev.rancher.tool.api.AndroidStructuredToolApi
+import dev.rancher.tool.api.ObserveToolResult
 import kotlinx.coroutines.launch
 
 @Composable
@@ -47,6 +49,7 @@ fun RancherDevHarnessScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val api = remember { AndroidStructuredToolApi() }
     val service by AccessibilityBridge.service.collectAsState()
     val activePackage by AccessibilityBridge.activePackage.collectAsState()
     val snapshot by UiSnapshotEngine.currentSnapshot.collectAsState()
@@ -54,7 +57,7 @@ fun RancherDevHarnessScreen(
 
     LaunchedEffect(service) {
         if (service != null) {
-            UiSnapshotEngine.capture()
+            lastResult = api.observe().toToolResult()
         }
     }
 
@@ -67,7 +70,7 @@ fun RancherDevHarnessScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                text = "Rancher Dev Harness",
+                text = stringResource(R.string.dev_harness_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
@@ -90,23 +93,46 @@ fun RancherDevHarnessScreen(
                 fontFamily = FontFamily.Monospace,
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedButton(onClick = { openAccessibilitySettings(context) }) {
-                    Text("Accessibility Settings")
+                    Text(stringResource(R.string.button_accessibility_settings))
                 }
                 Button(
                     enabled = service != null,
                     onClick = onStartSettingsOverlayDemo,
                 ) {
-                    Text("M0 Settings demo")
+                    Text(stringResource(R.string.button_settings_demo))
                 }
                 OutlinedButton(onClick = onStopOverlay) {
-                    Text("Hide overlay")
+                    Text(stringResource(R.string.button_hide_overlay))
+                }
+                OutlinedButton(
+                    enabled = service != null,
+                    onClick = {
+                        scope.launch {
+                            lastResult = api.back()
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.button_back))
+                }
+                OutlinedButton(
+                    enabled = service != null,
+                    onClick = {
+                        scope.launch {
+                            lastResult = api.home()
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.button_home))
                 }
             }
 
             Text(
-                text = "For the real Settings demo, use “M0 Settings demo”. It keeps Settings active and shows a developer accessibility overlay with Refresh/CLICK controls.",
+                text = stringResource(R.string.description_settings_demo),
                 style = MaterialTheme.typography.bodySmall,
             )
 
@@ -115,11 +141,11 @@ fun RancherDevHarnessScreen(
                 onClick = {
                     scope.launch {
                         lastResult = null
-                        UiSnapshotEngine.capture()
+                        lastResult = api.observe().toToolResult()
                     }
                 },
             ) {
-                Text("Refresh current window")
+                Text(stringResource(R.string.button_refresh_window))
             }
 
             lastResult?.let { result ->
@@ -138,7 +164,7 @@ fun RancherDevHarnessScreen(
             HorizontalDivider()
 
             if (snapshot == null) {
-                Text("No semantic snapshot yet. Enable the service, then run the M0 Settings demo.")
+                Text(stringResource(R.string.text_no_snapshot))
             } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
@@ -148,6 +174,7 @@ fun RancherDevHarnessScreen(
                         NodeCard(
                             node = node,
                             snapshotId = snapshot!!.id,
+                            api = api,
                             onResult = { lastResult = it },
                         )
                     }
@@ -161,6 +188,7 @@ fun RancherDevHarnessScreen(
 private fun NodeCard(
     node: UiNode,
     snapshotId: String,
+    api: AndroidStructuredToolApi,
     onResult: (ToolResult) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -191,14 +219,66 @@ private fun NodeCard(
                         scope.launch {
                             busy = true
                             try {
-                                onResult(AndroidActionExecutor.click(snapshotId, node.id))
+                                onResult(api.click(snapshotId, node.id))
                             } finally {
                                 busy = false
                             }
                         }
                     },
                 ) {
-                    Text(if (busy) "CLICKING…" else "CLICK")
+                    Text(stringResource(if (busy) R.string.button_clicking else R.string.button_click))
+                }
+            }
+            if (node.longClickable) {
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    enabled = node.enabled && !busy,
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            try {
+                                onResult(api.longClick(snapshotId, node.id))
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                ) {
+                    Text(stringResource(if (busy) R.string.button_long_clicking else R.string.button_long_click))
+                }
+            }
+            if (node.scrollable) {
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    enabled = node.enabled && !busy,
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            try {
+                                onResult(api.scroll(snapshotId, node.id, "forward"))
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                ) {
+                    Text(stringResource(if (busy) R.string.button_scrolling_forward else R.string.button_scroll_forward))
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    enabled = node.enabled && !busy,
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            try {
+                                onResult(api.scroll(snapshotId, node.id, "backward"))
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                ) {
+                    Text(stringResource(if (busy) R.string.button_scrolling_backward else R.string.button_scroll_backward))
                 }
             }
         }
@@ -212,3 +292,11 @@ private fun openAccessibilitySettings(context: Context) {
         },
     )
 }
+
+private fun ObserveToolResult.toToolResult(): ToolResult = ToolResult(
+    status = status,
+    message = message,
+    previousSnapshotId = null,
+    newSnapshotId = snapshot?.id,
+    durationMs = durationMs,
+)

@@ -1,0 +1,11 @@
+<resources>
+    <string name="dev_harness_title">Rancher 開発ハーネス</string>
+    <string name="button_accessibility_settings">ユーザー補助設定</string>
+    <string name="button_settings_demo">M0 設定デモ</string>
+    <string name="button_hide_overlay">オーバーレイを隠す</string>
+    <string name="description_settings_demo">実際の設定デモを行うには「M0 設定デモ」を使用してください。設定画面を表示したまま、更新・クリック操作ができる開発者向けオーバーレイが表示されます。</string>
+    <string name="button_refresh_window">現在の画面を更新</string>
+    <string name="text_no_snapshot">まだセマンティックスナップショットがありません。サービスを有効化してからM0設定デモを実行してください。</string>
+    <string name="button_click">クリック</string>
+    <string name="button_clicking">クリック中…</string>
+</resources>

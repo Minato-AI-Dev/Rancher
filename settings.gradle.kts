@@ -23,4 +23,5 @@ include(
     ":android-snapshot",
     ":android-actions",
     ":debug-harness",
+    ":structured-tool-api",
 )

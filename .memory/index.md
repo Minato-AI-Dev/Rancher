@@ -45,6 +45,8 @@
   - 「One action -> one fresh observation」の徹底。クリック実行後に対象アプリのUI変化イベントを待機し、画面安定後に必ず新しい `UiSnapshot` を生成。
 - **serviceInfo 動的再設定**:
   - エミュレータ等の接続不安定を防止するため、`onServiceConnected` 時にコードから監視設定（イベント種別、フラグ）を明示的に再適用。
+- **capture() の一時的null吸収リトライ（2026-09-24修正・2026-09-26レビュー確定）**:
+  - 実機でクリック直後に`rootInActiveWindow`が一瞬nullになる事象への対処として短いリトライ（3回・100ms間隔）を追加。全リトライ失敗時に旧snapshotが残る残余リスクはfingerprint照合により実質的に緩和されており、スコープ外の既存設計特性として対応不要と判断（PASS確定）。将来課題（旧snapshot明示無効化、capture()配線の直接テスト）あり。
 - 詳細は [knowledge/m0-safety-architecture.md](knowledge/m0-safety-architecture.md) を参照。
 
 ---
@@ -52,13 +54,5 @@
 ## 3. ナレッジファイル構成
 
 - [knowledge/environment-and-tooling.md](knowledge/environment-and-tooling.md): SDK、AVD、Gradle、Java、実行環境知見
-- [knowledge/m0-safety-architecture.md](knowledge/m0-safety-architecture.md): セーフティ機構、不変条件、アクセシビリティ知見（§5に実機/MIUI特有の知見あり）
-
----
-
-## 4. 実機（Xiaomi/MIUI）検証で得た追加知見（2026-09-20, PR #3）
-
-- **検証環境**: Xiaomi実機（モデル`25080RABDR`、コードネーム`lapis`）、Android 16 / API 36、arm64-v8a、MIUI。
-- **重要な発見**: MIUIはバックグラウンドで`RancherAccessibilityService`を定期的に破棄・再生成する。この際、serviceより長く生きるシングルトン状態（`DebugOverlayController.rootView`）が破棄を検知せず、overlayデモが永久に無反応になるバグを発見・修正した。詳細は[knowledge/m0-safety-architecture.md §5](knowledge/m0-safety-architecture.md)を参照。
-- **OEM差異**: 標準Android/Pixelの「Connected devices」に相当する項目が、このROMでは「Bluetooth」/「Interconnectivity」という異なるラベル・グルーピングで表示される。semantic nodeの特定はラベル文字列ではなく実際の画面構造を都度確認する必要がある。
-- **PR状況（2026-09-22時点）**: 上記修正はPR #3（`verify/m0-android-control-harness-real-device`ブランチ、コミット`30571b9`）としてOPENだが**未マージ**。Codexの品質ゲート再判定が未実施。マージ前提の作業をこの上に積まないこと。
+- [knowledge/m0-safety-architecture.md](knowledge/m0-safety-architecture.md): セーフティ機構、不変条件、アクセシビリティ知見
+- [engine-test-seams-gap](knowledge/engine-test-seams-gap.md) — fingerprint不一致/fresh取得失敗のJVMテスト不足（M1で承認済みの既知課題）

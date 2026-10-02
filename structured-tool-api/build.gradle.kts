@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.rancher.android.actions"
+    namespace = "dev.rancher.tool.api"
     compileSdk = 37
 
     defaultConfig {
@@ -13,12 +13,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
-    }
-
-    testOptions {
-        unitTests {
-            isReturnDefaultValues = true
-        }
     }
 }
 
@@ -30,7 +24,8 @@ dependencies {
     implementation(project(":core-model"))
     implementation(project(":android-accessibility"))
     implementation(project(":android-snapshot"))
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation(project(":android-actions"))
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 }
