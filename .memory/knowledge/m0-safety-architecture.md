@@ -35,3 +35,16 @@
 - **実装メカニズム**:
   - `RancherAccessibilityService.onServiceConnected()` 内で、プログラムから明示的に `serviceInfo` を再設定（`eventTypes`, `feedbackType`, `flags`, `notificationTimeout`）。
   - これにより、エミュレータ起動直後から `TYPE_WINDOW_CONTENT_CHANGED` などのイベントを漏れなく確実に補足できる。
+
+## 5. サービス再接続時の状態リセット（"resync on reconnect"パターン）
+
+- **背景・目的（2026-09-20 実機（Xiaomi/MIUI, Android 16）検証で発見）**:
+  - MIUIなど一部のROMは、バックグラウンドで`RancherAccessibilityService`を定期的に破棄・再生成する（通常のOS挙動。`adb shell uiautomator dump`によるUiAutomation経由の一時的な再バインドとは別原因）。
+  - service破棄時、システムが追加していた`TYPE_ACCESSIBILITY_OVERLAY`ウィンドウも道連れに破棄されるが、`DebugOverlayController`のようにサービスの生存期間より長く生きるシングルトン状態（`rootView`など）を持つコンポーネントは、この破棄を検知しないと「もう表示されているはず」という誤った内部状態のまま固まってしまう。
+  - 実際に`rootView != null`ガードにより、以後`show()`を呼んでも永久に無反応になる不具合が発生した（`DebugOverlayController.kt`、修正コミット`30571b9`）。
+- **実装メカニズム（修正後）**:
+  - `DebugOverlayController`が`AccessibilityBridge.service`を監視し、`null`になった（＝serviceが破棄された）タイミングで自ら`hide()`を呼び、`rootView`/`windowManager`/`scope`をリセットする。
+  - これにより、serviceが再生成された後の次回`show()`呼び出しが正しく新しいoverlayを追加できる。
+- **M1以降への教訓**:
+  - サービスの生存期間より長く生きる可能性のあるシングルトン/静的状態を持つコンポーネントは、すべて同じ「serviceがnullになったら自分の状態もリセットする」パターン（resync on reconnect）に従うべき。`AccessibilityBridge`・`UiSnapshotEngine`のような既存シングルトンも将来拡張する際はこの前提を意識すること。
+  - Emulator（Pixel_8a）だけの検証ではこの種の「バックグラウンドでのサービス強制終了」系の不具合は再現しなかった。実機（特にMIUIなどOEMが独自の省電力/バックグラウンド管理を行うROM）での検証が必要な理由の実例。

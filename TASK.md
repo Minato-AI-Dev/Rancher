@@ -1,10 +1,10 @@
 # タスク: Rancher M0 — Android Control Harness 実機/Emulator検証
 
-- 状態: 完了 (M0 PASS)
-- 現在の担当: Antigravity
+- 状態: PR #3 レビュー待ち（実機検証は完了、mainへの取り込みが未完了）
+- 現在の担当: Codex（PR #3の品質ゲート判定）
 - 依頼者: ユーザー
 - 作成日: 2026-09-16
-- 更新日: 2026-09-17
+- 更新日: 2026-09-22
 - 優先順位: 高
 - 期限: 期限なし
 
@@ -120,14 +120,31 @@ Rancher M0（AccessibilityService経由でAndroid UIを観測し、semantic UiSn
   - コマンド: `.\gradlew.bat :android-snapshot:testDebugUnitTest`
   - 結果: `UiSnapshotEngineTest.testPasswordRedaction_replacesPasswordWithRedactedText` (PASS), `testPasswordRedaction_inUiNodeModel` (PASS)。password=true ノードの text および contentDescription が平文を出さず `[REDACTED]` になることを確認。レビュー修正後も4件PASS確認。
 
+## 作業履歴（続き・実機再検証）
+- 2026-09-20 Claude（ユーザー明示指示により直接実装・検証を担当。AGENTS.mdの「Claudeは原則コードを編集しない」の例外として、ユーザーが実機検証と修正の直接実行を指示したため）:
+  1. PR #2（`feat(m0): verify Android control harness and pass all acceptance tests`）は既に `main` へマージ済みであることを確認。
+  2. ユーザー要望により、Emulatorではなく **実機（Xiaomi、コードネーム`lapis`、モデル`25080RABDR`、Android 16 / API 36、MIUI、arm64-v8a）** でM0 Test 1〜8を再実施。
+  3. `local.properties`（gitignore対象）でSDKパスを実機接続済みの既存Android SDKへ向け、`adb install` / `am start` でAPKをインストール・起動。クラッシュなし。
+  4. Accessibility Settingsでの表示・有効化・`onServiceConnected()`発火・AccessibilityEvent受信・active package取得を確認（`dumpsys accessibility`, Logcatで確認）。
+  5. Android Settingsを開き`UiSnapshotEngine.capture()`で`snap_000020`（semanticNodes=30, rawNodes=49, package=com.android.settings）を確認。
+  6. この端末のROM（MIUI）では標準Androidの「Connected devices」に相当する項目が「Bluetooth」/「Interconnectivity」という異なるラベル・グルーピングで表示されることを確認。TASKの「実際の画面ラベルに適応してよい」という指示どおり対応。
+  7. Debug Harness / M0 Overlayでnode #14（Bluetooth行）を特定し、`AndroidActionExecutor.click("snap_000020", 14)`を実行。`ACTION_CLICK`成功をLogcatで確認（`CLICK snapshot=snap_000020 node=14 label=#14`）。
+  8. クリック後、Settingsが Bluetooth 詳細画面へ遷移し、`snap_000021`（semanticNodes=28, rawNodes=31）が自動生成。`previousSnapshotId`（`snap_000020`）≠`newSnapshotId`（`snap_000021`）を確認（fresh observation再検証）。
+  9. Stale snapshot保護・password redactionは既存の単体テスト（`AndroidActionExecutorTest`, `UiSnapshotEngineTest`、6件）で再確認（ロジック自体は変更なしのため再導出はせず、既存テストの再実行で確認）。
+  10. **実機特有のバグを発見・修正**: MIUIはバックグラウンドで`RancherAccessibilityService`を定期的に破棄・再生成する（`AccessibilityManagerService`ログで確認。`adb shell uiautomator dump`起因の一時的な再バインドとは別の、通常のOS挙動と判断）。このときシステムが`TYPE_ACCESSIBILITY_OVERLAY`ウィンドウも道連れに破棄するが、`DebugOverlayController`のシングルトン`rootView`フィールドがリセットされず、以後`show()`を呼んでも`if (rootView != null) return`ガードで無反応になり、overlayデモが永続的に壊れる問題を発見。
+  11. 修正: `DebugOverlayController.kt`に、`AccessibilityBridge.service`を監視し、serviceが`null`になったら`hide()`（`rootView`/`windowManager`/`scope`を`null`にリセット）を呼ぶ処理を追加（12行追加のみ）。`android-accessibility`モジュールへの変更なし（overlay関連は引き続き非公開のまま、モジュール境界を維持）。
+  12. `./gradlew testDebugUnitTest`（6/6 PASS）、`./gradlew assembleDebug`（成功）を再確認。
+  13. ブランチ`verify/m0-android-control-harness-real-device`にコミット（`30571b9`）し、**PR #3**（`M0: verify Android Control Harness on real Xiaomi device, fix overlay lifecycle bug`）を作成。2026-09-22時点で**OPEN・未マージ**（`mergeable: MERGEABLE`, `mergeStateStatus: CLEAN`, CI未設定, レビュー未承認）。
+- 2026-09-22 Claude: セッション再開にあたり状況確認。TASK.md / QUALITY-REVIEW.md / `.memory/`がPR #2時点（2026-09-17）のまま更新されておらず、PR #3の実機検証結果・overlayバグ修正・MIUI固有知見が記録されていなかったため、本セクションと`.memory/`を追記して整合を取った。QUALITY-REVIEW.mdはPR #3に対する再判定が未実施のまま（2026-09-17時点のCHANGES REQUIREDの内容が残っている）。
+
 ## 引き継ぎメモ
 - 完了事項:
-  - M0 受入条件（Test 1〜8）のすべてを実機/Emulator検証および単体テストで完了（M0 PASS）。
-  - Codex品質レビュー（QUALITY-REVIEW.md CHANGES REQUIRED）の指摘1・3・5に対応完了:
-    - 指摘1: `README.md` の `gradle-wrapper.jar` 同梱記載へ修正。
-    - 指摘3: `RancherAccessibilityService.kt`, `UiSnapshotEngine.kt`, `AndroidActionExecutor.kt` の重要処理（stale snapshot保護、password redaction、fresh observation、serviceInfo再設定）に非エンジニア向け日本語コメントを追加。
-    - 指摘5: `.memory/index.md` および `knowledge/` 配下に環境情報・wrapper経緯・Java21統一・Kimiクラッシュ経緯と対処・M0安全設計を永続化。
-  - 指摘2（Redフェーズ）・指摘4（SDKアクセス）・指摘6（PRアクセス）はClaude設計判断（2026-09-17）により例外承認または独立検証済み。
-  - 単体テスト全6件（failures=0, errors=0）および `assembleDebug` の正常完走を確認。
-- 次の担当者: Codex（品質ゲート再判定・レビュー）
-- 次の行動: QUALITY-REVIEW.md の再確認（Gate 3-3, Gate 5-1, Gate 5-2の解消判定）および PASS 判定。承認後 PR #2 を main へマージ。
+  - M0 受入条件（Test 1〜8）をEmulator（Pixel_8a）と実機（Xiaomi/MIUI）の両方で実行・確認済み。
+  - PR #2（Emulator検証）はmainへマージ済み。
+  - PR #3（実機検証 + overlayライフサイクルバグ修正）は作成済みだが**未マージ**。
+  - Codex品質レビュー（QUALITY-REVIEW.md、2026-09-17時点でCHANGES REQUIRED）の指摘1・3・5はAntigravityが対応済み（README、日本語コメント、`.memory/`初版）。指摘2・4・6はClaude設計判断により例外承認または独立検証済み。**ただしQUALITY-REVIEW.md自体は一度もPASSへ更新されておらず、PR #3の内容も未反映**。
+- 次の担当者: Codex（PR #3を含めた品質ゲート再判定）
+- 次の行動:
+  1. QUALITY-REVIEW.mdをPR #3の差分（`DebugOverlayController.kt`の12行追加）も対象に再確認し、Gate 3-1/3-3/4-1/5-1/5-2の解消判定を記録する。
+  2. 問題なければPR #3をレビュー承認しmainへマージする（高リスク操作ではないためCodexのPASSで完了可。外部公開・課金・データ削除は含まない）。
+  3. マージ後、M1（AI Agent層・Structured Tool API）の着手可否をユーザーと確認する。
